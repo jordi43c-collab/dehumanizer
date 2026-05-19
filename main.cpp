@@ -1,7 +1,95 @@
 #include "raylib.h"
 #include "raymath.h"
+#include "rlgl.h"
 #include <math.h>
 #include <stdlib.h>
+
+// Custom Textured 3D Quad rendering helpers for pixel-perfect alignment
+void DrawFloorTile(Texture2D texture, Rectangle source, Vector3 position, Vector2 size, Color tint) {
+    float x = position.x;
+    float y = position.y;
+    float z = position.z;
+    float hw = size.x / 2.0f;
+    float hd = size.y / 2.0f;
+    
+    float u0 = source.x / (float)texture.width;
+    float v0 = source.y / (float)texture.height;
+    float u1 = (source.x + source.width) / (float)texture.width;
+    float v1 = (source.y + source.height) / (float)texture.height;
+    
+    rlSetTexture(texture.id);
+    rlBegin(RL_QUADS);
+        rlColor4ub(tint.r, tint.g, tint.b, tint.a);
+        rlNormal3f(0.0f, 1.0f, 0.0f);
+        rlTexCoord2f(u0, v0); rlVertex3f(x - hw, y, z - hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x - hw, y, z + hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x + hw, y, z + hd);
+        rlTexCoord2f(u1, v0); rlVertex3f(x + hw, y, z - hd);
+    rlEnd();
+    rlSetTexture(0);
+}
+
+void DrawWallBlock(Texture2D texture, Rectangle source, Vector3 position, Vector3 size, Color tint) {
+    float x = position.x;
+    float y = position.y;
+    float z = position.z;
+    float hw = size.x / 2.0f;
+    float hh = size.y / 2.0f;
+    float hd = size.z / 2.0f;
+    
+    float u0 = source.x / (float)texture.width;
+    float v0 = source.y / (float)texture.height;
+    float u1 = (source.x + source.width) / (float)texture.width;
+    float v1 = (source.y + source.height) / (float)texture.height;
+    
+    rlSetTexture(texture.id);
+    rlBegin(RL_QUADS);
+        rlColor4ub(tint.r, tint.g, tint.b, tint.a);
+        
+        // Front Face (Facing South: +z)
+        rlNormal3f(0.0f, 0.0f, 1.0f);
+        rlTexCoord2f(u0, v0); rlVertex3f(x - hw, y - hh, z + hd);
+        rlTexCoord2f(u1, v0); rlVertex3f(x + hw, y - hh, z + hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x + hw, y + hh, z + hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x - hw, y + hh, z + hd);
+        
+        // Back Face (Facing North: -z)
+        rlNormal3f(0.0f, 0.0f, -1.0f);
+        rlTexCoord2f(u1, v0); rlVertex3f(x - hw, y - hh, z - hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x - hw, y + hh, z - hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x + hw, y + hh, z - hd);
+        rlTexCoord2f(u0, v0); rlVertex3f(x + hw, y - hh, z - hd);
+        
+        // Left Face (Facing West: -x)
+        rlNormal3f(-1.0f, 0.0f, 0.0f);
+        rlTexCoord2f(u0, v0); rlVertex3f(x - hw, y - hh, z - hd);
+        rlTexCoord2f(u1, v0); rlVertex3f(x - hw, y - hh, z + hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x - hw, y + hh, z + hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x - hw, y + hh, z - hd);
+        
+        // Right Face (Facing East: +x)
+        rlNormal3f(1.0f, 0.0f, 0.0f);
+        rlTexCoord2f(u1, v0); rlVertex3f(x + hw, y - hh, z - hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x + hw, y + hh, z - hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x + hw, y + hh, z + hd);
+        rlTexCoord2f(u0, v0); rlVertex3f(x + hw, y - hh, z + hd);
+        
+        // Top Face (Facing Up: +y)
+        rlNormal3f(0.0f, 1.0f, 0.0f);
+        rlTexCoord2f(u0, v0); rlVertex3f(x - hw, y + hh, z - hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x - hw, y + hh, z + hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x + hw, y + hh, z + hd);
+        rlTexCoord2f(u1, v0); rlVertex3f(x + hw, y + hh, z - hd);
+        
+        // Bottom Face (Facing Down: -y)
+        rlNormal3f(0.0f, -1.0f, 0.0f);
+        rlTexCoord2f(u1, v0); rlVertex3f(x - hw, y - hh, z - hd);
+        rlTexCoord2f(u0, v0); rlVertex3f(x + hw, y - hh, z - hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x + hw, y - hh, z + hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x - hw, y - hh, z + hd);
+    rlEnd();
+    rlSetTexture(0);
+}
 
 // Enums & Structs
 Vector3 GetMouseGroundIntersection(Camera3D camera);
@@ -110,6 +198,24 @@ enum RoomType { ROOM_START, ROOM_ENEMY, ROOM_TREASURE, ROOM_BOSS };
 #define MAX_ROOM_PILLARS 6
 #define MAX_GROUND_ITEMS 8
 #define MAX_STARS 150
+#define MAX_ROOM_DECORATIONS 50
+
+struct Decoration {
+    Vector3 position;
+    int type;          // 0: Moss1, 1: Moss2, 2: Grass, 3: CyanFlower, 4: GreenFlower, 5: RedMushroom, 6: PurpleMushroom, 7: Stalagmite
+    int animFrame;
+    float animTimer;
+    Vector3 velocity;
+    float wanderTimer;
+    float speed;
+    bool active;
+    bool isInsect;     // true for beetle/firefly
+    bool isFly;        // true for firefly, false for beetle
+    float fleeTimer;
+    float alpha;
+    float bobOffset;
+    float floatHeight;
+};
 
 struct Room {
     bool active;
@@ -130,6 +236,9 @@ struct Room {
     
     int numItems;
     GroundItem items[MAX_GROUND_ITEMS];
+    
+    int numDecorations;
+    Decoration decorations[MAX_ROOM_DECORATIONS];
 };
 
 // Global Constants
@@ -224,6 +333,59 @@ void InitStarfield() {
         else if (rVal == 1) spaceStars[i].color = Fade(SKYBLUE, (float)GetRandomValue(40, 90) * 0.01f);
         else spaceStars[i].color = Fade(RAYWHITE, (float)GetRandomValue(40, 95) * 0.01f);
     }
+}
+
+// Chroma Key helper to clean background solid colors (e.g. pure black or magenta) and make them fully transparent
+void CleanImageBackground(Image *image, Color backgroundColor) {
+    if (image->data == NULL) return;
+    // Ensure the image format is uncompressed RGBA for direct Color casting
+    ImageFormat(image, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    
+    Color *pixels = (Color*)image->data;
+    int numPixels = image->width * image->height;
+    for (int i = 0; i < numPixels; i++) {
+        // Tolerance match for pure black or very dark colors (almost black, e.g. R, G, B all less than 15)
+        bool isBlackKey = (pixels[i].r < 15 && pixels[i].g < 15 && pixels[i].b < 15);
+        // Also support classic magenta chroma key
+        bool isMagentaKey = (pixels[i].r > 240 && pixels[i].g < 15 && pixels[i].b > 240);
+        
+        if (isBlackKey || isMagentaKey) {
+            // Convert to fully transparent black
+            pixels[i].a = 0;
+            pixels[i].r = 0;
+            pixels[i].g = 0;
+            pixels[i].b = 0;
+        }
+    }
+}
+
+// Resolves a resource file path by checking both the local folder and the parent folder (e.g. running from build/)
+const char* FindResourcePath(const char *fileName) {
+    // Try parent directory first (higher priority when running from build/ subfolder)
+    const char *parentPath = TextFormat("../%s", fileName);
+    if (FileExists(parentPath)) {
+        return parentPath;
+    }
+    if (FileExists(fileName)) {
+        return fileName;
+    }
+    return NULL;
+}
+
+// Loads a texture from file, applying real-time Chroma Keying to remove backgrounds
+Texture2D LoadTextureWithChromaKey(const char *fileName, Color keyColor) {
+    const char *resolvedPath = FindResourcePath(fileName);
+    if (resolvedPath == NULL) return (Texture2D){ 0 };
+    
+    Image img = LoadImage(resolvedPath);
+    if (img.data != NULL) {
+        CleanImageBackground(&img, keyColor);
+        Texture2D tex = LoadTextureFromImage(img);
+        UnloadImage(img);
+        SetTextureFilter(tex, TEXTURE_FILTER_POINT);
+        return tex;
+    }
+    return (Texture2D){ 0 };
 }
 
 // Procedural Character Spritesheet with Upgrades and Enemy Types (Width=256, Height=256)
@@ -368,6 +530,7 @@ Texture2D GenerateProceduralSpritesheet() {
     ImageDrawRectangle(&img, 96 + 12, 224 + 8, 8, 6, RAYWHITE);
     ImageDrawRectangle(&img, 96 + 14, 224 + 18, 4, 4, RAYWHITE); // positive cross
     
+    CleanImageBackground(&img, BLACK);
     ExportImage(img, "spritesheet.png");
     Texture2D tex = LoadTextureFromImage(img);
     UnloadImage(img);
@@ -375,103 +538,305 @@ Texture2D GenerateProceduralSpritesheet() {
     return tex;
 }
 
-// Procedural Auto-Tiled Spaceship Environment Spritesheet (Width=256, Height=256)
+// Procedural Auto-Tiled Cave Environment Spritesheet (Width=256, Height=256)
 Texture2D GenerateEnvironmentTileSheet() {
     Image img = GenImageColor(256, 256, BLANK);
     
     // Palettes
-    Color steelGrey = (Color){ 55, 60, 72, 255 };
-    Color darkSteel = (Color){ 28, 30, 38, 255 };
-    Color lightSteel = (Color){ 90, 100, 115, 255 };
+    Color rockBase = (Color){ 62, 54, 46, 255 };      // standard grayish brown rock
+    Color rockDark = (Color){ 36, 30, 26, 255 };      // cracks and shadows
+    Color rockLight = (Color){ 88, 78, 68, 255 };     // highlights
     
-    Color goldWhite = (Color){ 220, 215, 200, 255 };
-    Color goldTrim = (Color){ 190, 150, 50, 255 };
-    Color darkCabin = (Color){ 45, 45, 48, 255 };
+    Color crystalBase = (Color){ 45, 45, 60, 255 };   // mystical dark purple-gray rock
+    Color crystalDark = (Color){ 22, 22, 34, 255 };
+    Color crystalGlow = (Color){ 0, 210, 225, 255 };  // cyan bioluminescent crystals
+    Color crystalVibe = (Color){ 160, 80, 240, 255 }; // purple vibe
     
-    Color rustRed = (Color){ 95, 42, 38, 255 };
-    Color rustDark = (Color){ 42, 18, 18, 255 };
-    Color rustBright = (Color){ 145, 68, 62, 255 };
+    Color lavaBase = (Color){ 30, 25, 25, 255 };      // black/basalt volcanic rock
+    Color lavaDark = (Color){ 12, 10, 10, 255 };
+    Color lavaGlow = (Color){ 245, 95, 30, 255 };     // orange-red lava
+    Color lavaCore = (Color){ 255, 210, 60, 255 };    // yellow magma core
     
     for (int ty = 0; ty < 8; ty++) {
         for (int tx = 0; tx < 8; tx++) {
             int ox = tx * 32;
             int oy = ty * 32;
             
-            // --- 1. SECTOR 0: Standard Steel Spaceship Compartment (Cols 0-2) ---
+            // --- 1. SECTOR 0: Standard Brown-Gray Cave (Cols 0-2) ---
             if (tx < 3) {
-                if (ty < 2) { // Walls
-                    ImageDrawRectangle(&img, ox, oy, 32, 32, steelGrey);
-                    ImageDrawRectangle(&img, ox, oy, 32, 2, darkSteel);
-                    ImageDrawRectangle(&img, ox, oy, 2, 32, darkSteel);
-                    ImageDrawRectangle(&img, ox + 30, oy, 2, 32, lightSteel);
-                    ImageDrawRectangle(&img, ox, oy + 30, 32, 2, lightSteel);
-                    // Glowing indicator light dot
-                    ImageDrawCircle(&img, ox + 16, oy + 16, 3, BLUE);
-                    ImageDrawCircle(&img, ox + 16, oy + 16, 1, CYAN);
+                if (ty < 2) { // Rocky Walls
+                    ImageDrawRectangle(&img, ox, oy, 32, 32, rockBase);
+                    // Draw escarpated stone crack patterns
+                    for (int i = 0; i < 5; i++) {
+                        int rx1 = GetRandomValue(0, 31);
+                        int ry1 = GetRandomValue(0, 31);
+                        int rx2 = GetRandomValue(0, 31);
+                        int ry2 = GetRandomValue(0, 31);
+                        ImageDrawLine(&img, ox + rx1, oy + ry1, ox + rx2, oy + ry2, rockDark);
+                    }
+                    // Highlight stone edges
+                    for (int i = 0; i < 3; i++) {
+                        int rx = GetRandomValue(2, 28);
+                        int ry = GetRandomValue(2, 28);
+                        ImageDrawRectangle(&img, ox + rx, oy + ry, GetRandomValue(3, 8), GetRandomValue(2, 4), rockLight);
+                    }
+                    // Auto-tiling borders (shadow at edges)
+                    ImageDrawRectangle(&img, ox, oy, 32, 2, rockDark);
+                    ImageDrawRectangle(&img, ox, oy, 2, 32, rockDark);
+                    ImageDrawRectangle(&img, ox + 30, oy, 2, 32, rockDark);
+                    ImageDrawRectangle(&img, ox, oy + 30, 32, 2, rockDark);
                 }
-                else if (ty < 4) { // Floor
-                    ImageDrawRectangle(&img, ox, oy, 32, 32, darkSteel);
-                    // Steel grates
-                    for (int g = 4; g < 32; g += 8) {
-                        ImageDrawRectangle(&img, ox + g, oy + 2, 2, 28, steelGrey);
+                else if (ty < 4) { // Natural Stone / Earth transit floors
+                    ImageDrawRectangle(&img, ox, oy, 32, 32, (Color){ 54, 45, 38, 255 }); // earth base
+                    // Draw irregular flagstone textures
+                    for (int f = 0; f < 3; f++) {
+                        int px = GetRandomValue(2, 20);
+                        int py = GetRandomValue(2, 20);
+                        int w = GetRandomValue(6, 12);
+                        int h = GetRandomValue(6, 12);
+                        ImageDrawRectangle(&img, ox + px, oy + py, w, h, (Color){ 68, 58, 48, 255 });
+                        ImageDrawRectangleLines(&img, (Rectangle){ (float)(ox + px), (float)(oy + py), (float)w, (float)h }, 1, rockDark);
+                    }
+                    // Faint gravel dots
+                    for (int d = 0; d < 10; d++) {
+                        ImageDrawPixel(&img, ox + GetRandomValue(1, 30), oy + GetRandomValue(1, 30), rockLight);
                     }
                 }
-                else { // Background deep dark
-                    ImageDrawRectangle(&img, ox, oy, 32, 32, (Color){ 12, 14, 18, 255 });
-                    ImageDrawRectangle(&img, ox + 8, oy, 1, 32, (Color){ 24, 28, 36, 255 });
+                else { // Background deep cave background
+                    ImageDrawRectangle(&img, ox, oy, 32, 32, (Color){ 16, 14, 12, 255 });
+                    // Faint stony cracks in dark void
+                    for (int c = 0; c < 2; c++) {
+                        ImageDrawLine(&img, ox + GetRandomValue(0, 31), oy, ox + GetRandomValue(0, 31), oy + 31, (Color){ 24, 20, 18, 255 });
+                    }
                 }
             }
-            // --- 2. SECTOR 1: Gold-White Luxury cabins (Treasure) (Cols 3-5) ---
+            // --- 2. SECTOR 1: Bioluminescent Crystal Cave (Cols 3-5) ---
             else if (tx < 6) {
-                if (ty < 2) { // Walls
-                    ImageDrawRectangle(&img, ox, oy, 32, 32, goldWhite);
-                    ImageDrawRectangle(&img, ox, oy, 32, 2, goldTrim);
-                    ImageDrawRectangle(&img, ox, oy + 30, 32, 2, goldTrim);
-                    // Blue pipeline
-                    ImageDrawRectangle(&img, ox, oy + 14, 32, 4, CYAN);
+                if (ty < 2) { // Walls with glowing crystals
+                    ImageDrawRectangle(&img, ox, oy, 32, 32, crystalBase);
+                    // Draw dark rocky crack lines
+                    for (int i = 0; i < 4; i++) {
+                        ImageDrawLine(&img, ox + GetRandomValue(0, 31), oy + GetRandomValue(0, 31), ox + GetRandomValue(0, 31), oy + GetRandomValue(0, 31), crystalDark);
+                    }
+                    // Draw bioluminescent crystals (cyan spots)
+                    for (int c = 0; c < 3; c++) {
+                        int cx = GetRandomValue(4, 26);
+                        int cy = GetRandomValue(4, 26);
+                        ImageDrawCircle(&img, ox + cx, oy + cy, GetRandomValue(2, 4), crystalGlow);
+                        ImageDrawCircle(&img, ox + cx, oy + cy, 1, WHITE); // glowing tip
+                    }
+                    // Auto-tiling borders
+                    ImageDrawRectangle(&img, ox, oy, 32, 2, crystalDark);
+                    ImageDrawRectangle(&img, ox, oy, 2, 32, crystalDark);
+                    ImageDrawRectangle(&img, ox + 30, oy, 2, 32, crystalDark);
+                    ImageDrawRectangle(&img, ox, oy + 30, 32, 2, crystalDark);
                 }
                 else if (ty < 4) { // Floor
-                    ImageDrawRectangle(&img, ox, oy, 32, 32, goldWhite);
-                    ImageDrawRectangleLines(&img, (Rectangle){ (float)ox, (float)oy, 32, 32 }, 1, goldTrim);
-                    if (tx == 5) { // Wooden/Metallic Trapdoor for progression
-                        ImageDrawRectangle(&img, ox + 5, oy + 5, 22, 22, darkCabin);
-                        ImageDrawRectangleLines(&img, (Rectangle){ (float)ox + 5, (float)oy + 5, 22, 22 }, 1, goldTrim);
-                        ImageDrawCircle(&img, ox + 16, oy + 16, 3, CYAN); // glowing core
+                    ImageDrawRectangle(&img, ox, oy, 32, 32, (Color){ 30, 30, 42, 255 }); // dark floor
+                    // Draw flat moss stones
+                    for (int f = 0; f < 3; f++) {
+                        int px = GetRandomValue(2, 20);
+                        int py = GetRandomValue(2, 20);
+                        int w = GetRandomValue(6, 12);
+                        int h = GetRandomValue(6, 12);
+                        ImageDrawRectangle(&img, ox + px, oy + py, w, h, (Color){ 45, 45, 60, 255 });
+                        // Moss fringe on floor flagstones
+                        ImageDrawRectangle(&img, ox + px, oy + py, w, 2, (Color){ 10, 110, 80, 255 });
+                    }
+                    // Glowing spores
+                    for (int sp = 0; sp < 4; sp++) {
+                        ImageDrawPixel(&img, ox + GetRandomValue(2, 29), oy + GetRandomValue(2, 29), crystalGlow);
                     }
                 }
                 else { // Background deep dark
-                    ImageDrawRectangle(&img, ox, oy, 32, 32, (Color){ 24, 24, 28, 255 });
-                    ImageDrawRectangle(&img, ox + 15, oy, 2, 32, goldTrim);
+                    ImageDrawRectangle(&img, ox, oy, 32, 32, (Color){ 12, 12, 20, 255 });
+                    // Crystal cluster in background
+                    ImageDrawCircle(&img, ox + 16, oy + 16, 2, crystalVibe);
+                    ImageDrawPixel(&img, ox + 16, oy + 16, WHITE);
                 }
             }
-            // --- 3. SECTOR 2: Rust Red Boss Warning Chamber (Cols 6-7) ---
+            // --- 3. SECTOR 2: Volcanic Lava Cave (Cols 6-7) ---
             else {
-                if (ty < 2) { // Walls
-                    ImageDrawRectangle(&img, ox, oy, 32, 32, rustRed);
-                    ImageDrawRectangle(&img, ox, oy, 32, 2, rustDark);
-                    ImageDrawRectangle(&img, ox, oy + 30, 32, 2, rustBright);
-                    // WARNING stripes
-                    for (int s = 0; s < 32; s += 8) {
-                        ImageDrawLine(&img, ox + s, oy + 2, ox + s + 6, oy + 14, BLACK);
+                if (ty < 2) { // Basalt walls with glowing lava veins
+                    ImageDrawRectangle(&img, ox, oy, 32, 32, lavaBase);
+                    // Draw magma cracks
+                    ImageDrawLine(&img, ox + 6, oy, ox + 12, oy + 31, lavaGlow);
+                    ImageDrawLine(&img, ox + 22, oy, ox + 18, oy + 31, lavaGlow);
+                    ImageDrawLine(&img, ox + 2, oy + 16, ox + 28, oy + 18, lavaGlow);
+                    // Magma core lines inside cracks
+                    ImageDrawLine(&img, ox + 6, oy, ox + 12, oy + 31, lavaCore);
+                    
+                    // Dark cracks
+                    for (int c = 0; c < 3; c++) {
+                        ImageDrawLine(&img, ox + GetRandomValue(0, 31), oy + GetRandomValue(0, 31), ox + GetRandomValue(0, 31), oy + GetRandomValue(0, 31), lavaDark);
                     }
+                    // Auto-tiling borders
+                    ImageDrawRectangle(&img, ox, oy, 32, 2, lavaDark);
+                    ImageDrawRectangle(&img, ox, oy, 2, 32, lavaDark);
+                    ImageDrawRectangle(&img, ox + 30, oy, 2, 32, lavaDark);
+                    ImageDrawRectangle(&img, ox, oy + 30, 32, 2, lavaDark);
                 }
                 else if (ty < 4) { // Floor
-                    ImageDrawRectangle(&img, ox, oy, 32, 32, rustDark);
-                    ImageDrawRectangleLines(&img, (Rectangle){ (float)ox, (float)oy, 32, 32 }, 1, rustRed);
-                    if (tx == 7) { // Rusted active Trapdoor
-                        ImageDrawRectangle(&img, ox + 5, oy + 5, 22, 22, BLACK);
-                        ImageDrawRectangleLines(&img, (Rectangle){ (float)ox + 5, (float)oy + 5, 22, 22 }, 1, RED);
-                        ImageDrawCircle(&img, ox + 16, oy + 16, 4, RED); // warning reactor
-                    }
+                    ImageDrawRectangle(&img, ox, oy, 32, 32, lavaDark);
+                    // Lava pools / cracks in floor
+                    ImageDrawRectangle(&img, ox + 4, oy + 12, 24, 8, lavaGlow);
+                    ImageDrawRectangle(&img, ox + 8, oy + 14, 16, 4, lavaCore);
+                    // Basalt cobblestone details
+                    ImageDrawRectangleLines(&img, (Rectangle){ (float)ox, (float)oy, 32, 32 }, 1, (Color){ 40, 35, 35, 255 });
                 }
                 else { // Background deep dark
                     ImageDrawRectangle(&img, ox, oy, 32, 32, BLACK);
-                    ImageDrawRectangle(&img, ox + 4, oy, 1, 32, rustDark);
+                    // Magma drip vertical line
+                    ImageDrawRectangle(&img, ox + 15, oy, 2, 32, lavaGlow);
                 }
             }
         }
     }
     
+    // --- 4. CAVE FLORA DECORATIONS (Row 4: ty = 4) ---
+    // Column 0: Moss Patch 1 (Dense forest green)
+    int mox0 = 0 * 32, moy4 = 4 * 32;
+    ImageDrawCircle(&img, mox0 + 16, moy4 + 16, 11, (Color){ 20, 80, 45, 255 });
+    ImageDrawCircle(&img, mox0 + 11, moy4 + 14, 6, (Color){ 30, 110, 55, 255 });
+    ImageDrawCircle(&img, mox0 + 20, moy4 + 18, 7, (Color){ 45, 140, 70, 255 });
+    ImageDrawCircle(&img, mox0 + 16, moy4 + 16, 3, (Color){ 80, 185, 95, 255 }); // light highlight
+    
+    // Column 1: Moss Patch 2 (Vibrant golden/lime moss)
+    int mox1 = 1 * 32;
+    ImageDrawCircle(&img, mox1 + 16, moy4 + 16, 10, (Color){ 40, 70, 15, 255 });
+    ImageDrawCircle(&img, mox1 + 12, moy4 + 17, 7, (Color){ 75, 115, 25, 255 });
+    ImageDrawCircle(&img, mox1 + 20, moy4 + 13, 6, (Color){ 110, 155, 35, 255 });
+    ImageDrawCircle(&img, mox1 + 16, moy4 + 16, 4, (Color){ 165, 215, 45, 255 });
+    
+    // Column 2: Small underground grass patches (lime grass blades)
+    int mox2 = 2 * 32;
+    // Draw individual grass blades
+    ImageDrawLine(&img, mox2 + 10, moy4 + 28, mox2 + 7, moy4 + 10, LIME);
+    ImageDrawLine(&img, mox2 + 10, moy4 + 28, mox2 + 12, moy4 + 8, GREEN);
+    ImageDrawLine(&img, mox2 + 16, moy4 + 28, mox2 + 16, moy4 + 6, LIME);
+    ImageDrawLine(&img, mox2 + 20, moy4 + 28, mox2 + 20, moy4 + 12, GREEN);
+    ImageDrawLine(&img, mox2 + 20, moy4 + 28, mox2 + 25, moy4 + 9, LIME);
+    
+    // Column 3: Bioluminescent Cyan Flower
+    int mox3 = 3 * 32;
+    ImageDrawRectangle(&img, mox3 + 15, moy4 + 18, 2, 12, (Color){ 20, 80, 65, 255 }); // stem
+    // Petals
+    ImageDrawCircle(&img, mox3 + 10, moy4 + 14, 5, (Color){ 0, 140, 200, 255 });
+    ImageDrawCircle(&img, mox3 + 22, moy4 + 14, 5, (Color){ 0, 140, 200, 255 });
+    ImageDrawCircle(&img, mox3 + 16, moy4 + 9, 5, (Color){ 0, 160, 230, 255 });
+    ImageDrawCircle(&img, mox3 + 16, moy4 + 19, 5, (Color){ 0, 120, 170, 255 });
+    // Glowing center
+    ImageDrawCircle(&img, mox3 + 16, moy4 + 14, 3, CYAN);
+    ImageDrawCircle(&img, mox3 + 16, moy4 + 14, 1, WHITE);
+    
+    // Column 4: Bioluminescent Green Flower
+    int mox4 = 4 * 32;
+    ImageDrawRectangle(&img, mox4 + 15, moy4 + 18, 2, 12, (Color){ 10, 60, 15, 255 }); // stem
+    // Petals
+    ImageDrawCircle(&img, mox4 + 11, moy4 + 13, 5, (Color){ 0, 120, 40, 255 });
+    ImageDrawCircle(&img, mox4 + 21, moy4 + 13, 5, (Color){ 0, 120, 40, 255 });
+    ImageDrawCircle(&img, mox4 + 16, moy4 + 8, 5, (Color){ 10, 170, 60, 255 });
+    ImageDrawCircle(&img, mox4 + 16, moy4 + 18, 5, (Color){ 5, 100, 30, 255 });
+    // Glowing center
+    ImageDrawCircle(&img, mox4 + 16, moy4 + 13, 3, LIME);
+    ImageDrawCircle(&img, mox4 + 16, moy4 + 13, 1, WHITE);
+    
+    // Column 5: Red Mushroom (Setas rojas)
+    int mox5 = 5 * 32;
+    ImageDrawRectangle(&img, mox5 + 14, moy4 + 16, 4, 13, (Color){ 200, 190, 180, 255 }); // stalk
+    ImageDrawCircle(&img, mox5 + 16, moy4 + 12, 9, RED); // cap
+    ImageDrawRectangle(&img, mox5 + 7, moy4 + 12, 19, 3, RED); // base of cap
+    // White spots
+    ImageDrawPixel(&img, mox5 + 12, moy4 + 8, WHITE);
+    ImageDrawPixel(&img, mox5 + 20, moy4 + 10, WHITE);
+    ImageDrawPixel(&img, mox5 + 16, moy4 + 12, WHITE);
+    ImageDrawPixel(&img, mox5 + 15, moy4 + 7, WHITE);
+    
+    // Column 6: Purple Bioluminescent Mushroom (Seta bioluminiscente)
+    int mox6 = 6 * 32;
+    ImageDrawRectangle(&img, mox6 + 14, moy4 + 16, 4, 13, (Color){ 120, 110, 160, 255 }); // stalk
+    ImageDrawCircle(&img, mox6 + 16, moy4 + 11, 8, VIOLET); // cap
+    ImageDrawRectangle(&img, mox6 + 8, moy4 + 11, 17, 3, VIOLET);
+    // Cyan bioluminescent spots
+    ImageDrawPixel(&img, mox6 + 12, moy4 + 7, CYAN);
+    ImageDrawPixel(&img, mox6 + 19, moy4 + 9, CYAN);
+    ImageDrawPixel(&img, mox6 + 15, moy4 + 10, CYAN);
+    
+    // Column 7: Small Stalagmite / Stone Pile
+    int mox7 = 7 * 32;
+    // Stalagmite spike shape (using stacked horizontal lines of decreasing width to draw a gorgeous pixel stalagmite!)
+    for (int y = 4; y < 30; y++) {
+        int width = (30 - y) * 20 / 26;
+        int lx = 16 - width / 2;
+        int rx = 16 + width / 2;
+        for (int px = lx; px <= rx; px++) {
+            Color c = (px == lx || px == rx) ? rockDark : (px == lx + 1 || px == lx + 2) ? rockLight : rockBase;
+            ImageDrawPixel(&img, mox7 + px, moy4 + y, c);
+        }
+    }
+    
+    // --- 5. CAVE FAUNA ANIMATED BEETLES (Row 5: ty = 5) ---
+    int moy5 = 5 * 32;
+    // Frame 0: Beetle legs out
+    int bx0 = 0 * 32;
+    ImageDrawRectangle(&img, bx0 + 13, moy5 + 10, 6, 12, (Color){ 45, 32, 22, 255 }); // body shell
+    ImageDrawCircle(&img, bx0 + 16, moy5 + 8, 4, (Color){ 30, 20, 15, 255 }); // head
+    // Legs frame 0
+    ImageDrawLine(&img, bx0 + 10, moy5 + 11, bx0 + 22, moy5 + 11, BLACK); // front legs
+    ImageDrawLine(&img, bx0 + 9, moy5 + 15, bx0 + 23, moy5 + 15, BLACK);  // mid legs
+    ImageDrawLine(&img, bx0 + 10, moy5 + 19, bx0 + 22, moy5 + 19, BLACK); // back legs
+    // Antennas
+    ImageDrawLine(&img, bx0 + 14, moy5 + 5, bx0 + 16, moy5 + 8, ORANGE);
+    ImageDrawLine(&img, bx0 + 18, moy5 + 5, bx0 + 16, moy5 + 8, ORANGE);
+    
+    // Frame 1: Beetle legs in/bent
+    int bx1 = 1 * 32;
+    ImageDrawRectangle(&img, bx1 + 13, moy5 + 10, 6, 12, (Color){ 45, 32, 22, 255 }); // body
+    ImageDrawCircle(&img, bx1 + 16, moy5 + 8, 4, (Color){ 30, 20, 15, 255 });
+    // Legs frame 1 (bent)
+    ImageDrawLine(&img, bx1 + 11, moy5 + 12, bx1 + 21, moy5 + 12, BLACK);
+    ImageDrawLine(&img, bx1 + 12, moy5 + 16, bx1 + 20, moy5 + 16, BLACK);
+    ImageDrawLine(&img, bx1 + 11, moy5 + 18, bx1 + 21, moy5 + 18, BLACK);
+    // Antennas
+    ImageDrawLine(&img, bx1 + 13, moy5 + 6, bx1 + 16, moy5 + 8, ORANGE);
+    ImageDrawLine(&img, bx1 + 19, moy5 + 6, bx1 + 16, moy5 + 8, ORANGE);
+    
+    // Frame 2: Beetle legs toggled/walking asymmetry
+    int bx2 = 2 * 32;
+    ImageDrawRectangle(&img, bx2 + 13, moy5 + 10, 6, 12, (Color){ 45, 32, 22, 255 });
+    ImageDrawCircle(&img, bx2 + 16, moy5 + 8, 4, (Color){ 30, 20, 15, 255 });
+    // Legs asymmetrical
+    ImageDrawLine(&img, bx2 + 9, moy5 + 10, bx2 + 21, moy5 + 12, BLACK);
+    ImageDrawLine(&img, bx2 + 12, moy5 + 14, bx2 + 23, moy5 + 16, BLACK);
+    ImageDrawLine(&img, bx2 + 9, moy5 + 19, bx2 + 21, moy5 + 17, BLACK);
+    // Antennas
+    ImageDrawLine(&img, bx2 + 14, moy5 + 5, bx2 + 16, moy5 + 8, ORANGE);
+    ImageDrawLine(&img, bx2 + 18, moy5 + 5, bx2 + 16, moy5 + 8, ORANGE);
+    
+    // --- 6. CAVE FAUNA ANIMATED FIREFLIES (Row 6: ty = 6) ---
+    int moy6 = 6 * 32;
+    // Frame 0: Small glow
+    int fx0 = 0 * 32;
+    ImageDrawCircle(&img, fx0 + 16, moy6 + 16, 5, Fade(YELLOW, 0.4f)); // soft outer glow
+    ImageDrawCircle(&img, fx0 + 16, moy6 + 16, 2, (Color){ 255, 255, 100, 255 }); // yellow core
+    ImageDrawPixel(&img, fx0 + 16, moy6 + 16, WHITE); // white hot core
+    
+    // Frame 1: Big glow with destello (cross flare)
+    int fx1 = 1 * 32;
+    ImageDrawCircle(&img, fx1 + 16, moy6 + 16, 9, Fade(GOLD, 0.35f));
+    ImageDrawCircle(&img, fx1 + 16, moy6 + 16, 4, Fade(YELLOW, 0.6f));
+    ImageDrawCircle(&img, fx1 + 16, moy6 + 16, 2, WHITE);
+    // Flare cross lines
+    ImageDrawLine(&img, fx1 + 11, moy6 + 16, fx1 + 21, moy6 + 16, Fade(WHITE, 0.8f));
+    ImageDrawLine(&img, fx1 + 16, moy6 + 11, fx1 + 16, moy6 + 21, Fade(WHITE, 0.8f));
+    
+    // Frame 2: Soft pulsing medium glow
+    int fx2 = 2 * 32;
+    ImageDrawCircle(&img, fx2 + 16, moy6 + 16, 7, Fade(LIME, 0.3f));
+    ImageDrawCircle(&img, fx2 + 16, moy6 + 16, 3, Fade(YELLOW, 0.5f));
+    ImageDrawCircle(&img, fx2 + 16, moy6 + 16, 1, WHITE);
+    
+    CleanImageBackground(&img, BLACK);
     ExportImage(img, "tile_spritesheet.png");
     Texture2D tex = LoadTextureFromImage(img);
     UnloadImage(img);
@@ -686,6 +1051,130 @@ void GenerateProceduralDungeon() {
             r.enemies[0].animFrame = 0;
             r.enemies[0].hasFiredAttack = false;
         }
+        
+        // --- SEED-BASED DECORATION CLUSTERING ---
+        r.numDecorations = 0;
+        
+        // Let's create 3 or 4 seeds in the room
+        int numSeeds = GetRandomValue(3, 5);
+        Vector3 seeds[5];
+        
+        // Define seed points: some near corners, some near pillars, some completely random
+        for (int s = 0; s < numSeeds; s++) {
+            if (s < r.numPillars) {
+                // Seed near a pillar (beautiful accumulation!)
+                float angle = (float)GetRandomValue(0, 360) * DEG2RAD;
+                seeds[s] = (Vector3){
+                    r.pillars[s].x + cosf(angle) * 1.0f,
+                    0.0f,
+                    r.pillars[s].z + sinf(angle) * 1.0f
+                };
+            } else {
+                // Seed in random walkable spots
+                seeds[s] = (Vector3){
+                    (float)GetRandomValue(-7, 7) * 1.0f,
+                    0.0f,
+                    (float)GetRandomValue(-7, 7) * 1.0f
+                };
+            }
+        }
+        
+        // From each seed, grow a cluster of plants/insects
+        for (int s = 0; s < numSeeds; s++) {
+            int clusterSize = GetRandomValue(5, 10);
+            for (int c = 0; c < clusterSize; c++) {
+                if (r.numDecorations >= MAX_ROOM_DECORATIONS) break;
+                
+                // Disperse coordinates radially from the seed
+                float angle = (float)GetRandomValue(0, 359) * DEG2RAD;
+                float radius = (float)GetRandomValue(10, 220) * 0.01f; // up to 2.2 units out
+                
+                float dx = cosf(angle) * radius;
+                float dz = sinf(angle) * radius;
+                
+                Vector3 decPos = (Vector3){ seeds[s].x + dx, 0.0f, seeds[s].z + dz };
+                
+                // Walkability checks
+                if (decPos.x < -8.5f || decPos.x > 8.5f || decPos.z < -8.5f || decPos.z > 8.5f) continue;
+                
+                // Avoid doorways (the cross corridors of width 2.5)
+                if (fabsf(decPos.x) < 1.8f && fabsf(decPos.z) > 6.0f) continue; // North/South doors
+                if (fabsf(decPos.z) < 1.8f && fabsf(decPos.x) > 6.0f) continue; // East/West doors
+                
+                // Avoid too close to start room spawn center (if start room)
+                if (rx == startX && ry == startY && decPos.x * decPos.x + decPos.z * decPos.z < 9.0f) continue;
+                
+                // Avoid too close to boss spawn in boss room
+                if (r.type == ROOM_BOSS && decPos.x * decPos.x + decPos.z * decPos.z < 4.0f) continue;
+                
+                // Avoid pillar overlap
+                bool overlapsPillar = false;
+                for (int p = 0; p < r.numPillars; p++) {
+                    float pdx = decPos.x - r.pillars[p].x;
+                    float pdz = decPos.z - r.pillars[p].z;
+                    if (pdx * pdx + pdz * pdz < 1.3f) {
+                        overlapsPillar = true;
+                        break;
+                    }
+                }
+                if (overlapsPillar) continue;
+                
+                // Weighted Probability Selector:
+                // 60% Grass/Moss, 30% Flower/Mushroom, 10% Insect
+                int roll = GetRandomValue(0, 99);
+                Decoration dec = { 0 };
+                dec.position = decPos;
+                dec.active = true;
+                dec.alpha = 1.0f;
+                dec.fleeTimer = 0.0f;
+                dec.animTimer = (float)GetRandomValue(0, 100) * 0.01f;
+                dec.animFrame = 0;
+                
+                if (roll < 60) {
+                    // Moss or Grass
+                    int subRoll = GetRandomValue(0, 2);
+                    if (subRoll == 0) dec.type = 0;      // Moss1 (dark green)
+                    else if (subRoll == 1) dec.type = 1; // Moss2 (lime moss)
+                    else dec.type = 2;                  // Grass
+                    dec.isInsect = false;
+                }
+                else if (roll < 90) {
+                    // Flower or Mushroom
+                    int subRoll = GetRandomValue(0, 3);
+                    if (subRoll == 0) dec.type = 3;      // Cyan Flower
+                    else if (subRoll == 1) dec.type = 4; // Green Flower
+                    else if (subRoll == 2) dec.type = 5; // Red Mushroom
+                    else dec.type = 6;                  // Purple Mushroom
+                    dec.isInsect = false;
+                }
+                else {
+                    // Insect
+                    dec.isInsect = true;
+                    int subRoll = GetRandomValue(0, 1);
+                    if (subRoll == 0) {
+                        // Beetle
+                        dec.type = 8; // Beetle (sprites drawn at row 5)
+                        dec.isFly = false;
+                        dec.speed = (float)GetRandomValue(6, 12) * 0.1f; // 0.6 - 1.2
+                    } else {
+                        // Firefly
+                        dec.type = 9; // Firefly (sprites drawn at row 6)
+                        dec.isFly = true;
+                        dec.speed = (float)GetRandomValue(12, 22) * 0.1f; // 1.2 - 2.2
+                        dec.position.y = (float)GetRandomValue(5, 12) * 0.1f; // starts suspended
+                        dec.floatHeight = dec.position.y;
+                        dec.bobOffset = (float)GetRandomValue(0, 100) * 0.1f;
+                    }
+                    
+                    // Wander setup
+                    float angle = (float)GetRandomValue(0, 360) * DEG2RAD;
+                    dec.velocity = (Vector3){ cosf(angle), 0.0f, sinf(angle) };
+                    dec.wanderTimer = (float)GetRandomValue(10, 30) * 0.1f; // 1 to 3 secs
+                }
+                
+                r.decorations[r.numDecorations++] = dec;
+            }
+        }
     }
     
     currentRoomX = startX;
@@ -714,25 +1203,37 @@ struct RenderBillboard {
     Vector2 size;
     Color tint;
     float depth;
+    int layer; // 0 = environment/decorations, 1 = characters/enemies/projectiles/items
 };
 
 #define MAX_RENDER_BILLBOARDS 512
 RenderBillboard billBuffer[MAX_RENDER_BILLBOARDS];
 int billCount = 0;
 
-void AddBillboardToRender(Vector3 pos, Texture2D tex, Rectangle src, Vector2 sz, Color col, Camera3D camera) {
+void AddBillboardToRender(Vector3 pos, Texture2D tex, Rectangle src, Vector2 sz, Color col, int layer, Camera3D camera) {
     if (billCount >= MAX_RENDER_BILLBOARDS) return;
     
     Vector3 camToPos = Vector3Subtract(pos, camera.position);
     float depth = Vector3Length(camToPos);
     
-    billBuffer[billCount++] = { pos, tex, src, sz, col, depth };
+    billBuffer[billCount++] = { pos, tex, src, sz, col, depth, layer };
 }
 
 void SortRenderBillboards() {
     for (int i = 0; i < billCount - 1; i++) {
         for (int j = i + 1; j < billCount; j++) {
-            if (billBuffer[j].depth > billBuffer[i].depth) {
+            bool swap = false;
+            // Sort by layer first (lower layer numbers are drawn first)
+            if (billBuffer[j].layer < billBuffer[i].layer) {
+                swap = true;
+            } else if (billBuffer[j].layer == billBuffer[i].layer) {
+                // If on the same layer, sort by depth (furthest drawn first)
+                if (billBuffer[j].depth > billBuffer[i].depth) {
+                    swap = true;
+                }
+            }
+            
+            if (swap) {
                 RenderBillboard temp = billBuffer[i];
                 billBuffer[i] = billBuffer[j];
                 billBuffer[j] = temp;
@@ -783,8 +1284,19 @@ int main(void) {
     camera.fovy = 52.0f;
     camera.projection = CAMERA_PERSPECTIVE;
     
-    Texture2D charSpritesheet = GenerateProceduralSpritesheet();
-    Texture2D envSpritesheet = GenerateEnvironmentTileSheet();
+    Texture2D charSpritesheet;
+    if (FindResourcePath("spritesheet.png") != NULL) {
+        charSpritesheet = LoadTextureWithChromaKey("spritesheet.png", BLACK);
+    } else {
+        charSpritesheet = GenerateProceduralSpritesheet();
+    }
+    
+    Texture2D envSpritesheet;
+    if (FindResourcePath("tile_spritesheet.png") != NULL) {
+        envSpritesheet = LoadTextureWithChromaKey("tile_spritesheet.png", BLACK);
+    } else {
+        envSpritesheet = GenerateEnvironmentTileSheet();
+    }
     InitStarfield();
     
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
@@ -1383,6 +1895,115 @@ int main(void) {
                 camera.position.z += (float)GetRandomValue(-100, 100) * 0.003f * screenShake;
                 screenShake -= dt * 2.0f;
             }
+            
+            // --- UPDATE DECORATIONS & INSECTS ---
+            for (int d = 0; d < currentRoom.numDecorations; d++) {
+                Decoration &dec = currentRoom.decorations[d];
+                if (!dec.active) continue;
+                
+                dec.animTimer += dt * 5.0f; // animation speed
+                
+                // Tick particles / bioluminescent glow (cyan/green/golden/purple sparks)
+                if (dec.type == 3 || dec.type == 4 || dec.type == 6 || dec.type == 9) { // Cyan flower, Green flower, Purple mushroom, Firefly
+                    if (GetRandomValue(0, 100) < 4) { // 4% chance per frame to spark
+                        Color sparkCol = CYAN;
+                        if (dec.type == 4) sparkCol = LIME;
+                        else if (dec.type == 6) sparkCol = VIOLET;
+                        else if (dec.type == 9) sparkCol = GOLD;
+                        
+                        // Spawn a glow spark particle
+                        for (int p = 0; p < MAX_PARTICLES; p++) {
+                            if (!particles[p].active) {
+                                particles[p].active = true;
+                                particles[p].position = dec.position;
+                                if (dec.type == 9) particles[p].position.y = dec.position.y;
+                                else particles[p].position.y = 0.5f;
+                                
+                                particles[p].velocity = (Vector3){
+                                    (float)GetRandomValue(-4, 4) * 0.05f,
+                                    (float)GetRandomValue(3, 8) * 0.1f, // floats upwards!
+                                    (float)GetRandomValue(-4, 4) * 0.05f
+                                };
+                                particles[p].color = sparkCol;
+                                particles[p].life = (float)GetRandomValue(6, 15) * 0.1f;
+                                particles[p].maxLife = particles[p].life;
+                                particles[p].isGas = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                if (!dec.isInsect) continue;
+                
+                // Bobbing hover effect for fireflies
+                if (dec.isFly) {
+                    dec.bobOffset += dt * 4.0f;
+                    dec.position.y = dec.floatHeight + sinf(dec.bobOffset) * 0.15f;
+                }
+                
+                // Check distance to player for fleeing behavior
+                float pdx = player.position.x - dec.position.x;
+                float pdz = player.position.z - dec.position.z;
+                float distSq = pdx * pdx + pdz * pdz;
+                float alertRadius = 3.5f; // player warning distance
+                
+                if (distSq < alertRadius * alertRadius) {
+                    if (dec.fleeTimer == 0.0f) {
+                        dec.fleeTimer = 2.0f; // start flee timer
+                    }
+                }
+                
+                if (dec.fleeTimer > 0.0f) {
+                    dec.fleeTimer -= dt;
+                    dec.alpha = dec.fleeTimer / 2.0f; // fade out opacity
+                    if (dec.fleeTimer <= 0.0f) {
+                        dec.active = false;
+                        continue;
+                    }
+                    
+                    if (dec.isFly) {
+                        // Fly upwards into the dark ceiling!
+                        dec.floatHeight += dt * 4.0f;
+                        dec.position.y = dec.floatHeight;
+                        // Float slightly away from player
+                        float dist = sqrtf(distSq);
+                        if (dist > 0.0f) {
+                            dec.position.x -= (pdx / dist) * dt * 2.0f;
+                            dec.position.z -= (pdz / dist) * dt * 2.0f;
+                        }
+                    } else {
+                        // Beetle runs away in opposite direction!
+                        float dist = sqrtf(distSq);
+                        if (dist > 0.0f) {
+                            dec.position.x -= (pdx / dist) * dt * dec.speed * 2.5f;
+                            dec.position.z -= (pdz / dist) * dt * dec.speed * 2.5f;
+                        }
+                    }
+                } else {
+                    // Normal wandering behavior
+                    dec.wanderTimer -= dt;
+                    if (dec.wanderTimer <= 0.0f) {
+                        dec.wanderTimer = (float)GetRandomValue(15, 35) * 0.1f;
+                        if (GetRandomValue(0, 100) < 30) {
+                            dec.velocity = (Vector3){ 0.0f, 0.0f, 0.0f }; // rest briefly
+                        } else {
+                            float angle = (float)GetRandomValue(0, 360) * DEG2RAD;
+                            dec.velocity = (Vector3){ cosf(angle), 0.0f, sinf(angle) };
+                        }
+                    }
+                    
+                    // Move the insect
+                    dec.position.x += dec.velocity.x * dt * dec.speed;
+                    dec.position.z += dec.velocity.z * dt * dec.speed;
+                    
+                    // Boundaries check to keep insects inside the room grid
+                    if (dec.position.x < -8.8f) { dec.position.x = -8.8f; dec.velocity.x *= -1.0f; }
+                    if (dec.position.x > 8.8f) { dec.position.x = 8.8f; dec.velocity.x *= -1.0f; }
+                    if (dec.position.z < -8.8f) { dec.position.z = -8.8f; dec.velocity.z *= -1.0f; }
+                    if (dec.position.z > 8.8f) { dec.position.z = 8.8f; dec.velocity.z *= -1.0f; }
+                }
+            }
         }
         
         // --- DRAWING / RENDERING ---
@@ -1392,7 +2013,7 @@ int main(void) {
             if (currentScreen == SCREEN_TITLE) {
                 DrawRectangle(0, 0, screenWidth, screenHeight, (Color){ 12, 14, 20, 255 });
                 DrawText("PROJECT: DEHUMANIZER", screenWidth / 2 - MeasureText("PROJECT: DEHUMANIZER", 50) / 2, screenHeight / 2 - 160, 50, GOLD);
-                DrawText("SPACESHIP CARGO CRAWLER", screenWidth / 2 - MeasureText("SPACESHIP CARGO CRAWLER", 20) / 2, screenHeight / 2 - 100, 20, CYAN);
+                DrawText("CAVE CRAWLER 2.5D", screenWidth / 2 - MeasureText("CAVE CRAWLER 2.5D", 20) / 2, screenHeight / 2 - 100, 20, CYAN);
                 
                 DrawText("SELECCIONA DIFICULTAD (Presiona numero):", screenWidth / 2 - 200, screenHeight / 2 - 40, 20, RAYWHITE);
                 
@@ -1430,8 +2051,9 @@ int main(void) {
                     
                     // --- 1. FONDO LAYER (Dark back corridor grates behind doors) ---
                     for (int x = -11; x <= 11; x++) {
-                        DrawBillboardRec(camera, envSpritesheet, (Rectangle){ (float)tileOffsetCol * 32.0f, 4.0f * 32.0f, 32.0f, 32.0f }, (Vector3){ (float)x, 2.5f, -11.6f }, (Vector2){ 1.0f, 5.0f }, (Color){ 65, 65, 70, 255 });
-                        DrawBillboardRec(camera, envSpritesheet, (Rectangle){ (float)tileOffsetCol * 32.0f, 4.0f * 32.0f, 32.0f, 32.0f }, (Vector3){ (float)x, 2.5f, 11.6f }, (Vector2){ 1.0f, 5.0f }, (Color){ 65, 65, 70, 255 });
+                        Rectangle backSrc = { (float)tileOffsetCol * 32.0f, 2.0f * 32.0f, 32.0f, 32.0f };
+                        DrawBillboardRec(camera, envSpritesheet, backSrc, (Vector3){ (float)x, 2.5f, -11.6f }, (Vector2){ 1.0f, 5.0f }, (Color){ 65, 65, 70, 255 });
+                        DrawBillboardRec(camera, envSpritesheet, backSrc, (Vector3){ (float)x, 2.5f, 11.6f }, (Vector2){ 1.0f, 5.0f }, (Color){ 65, 65, 70, 255 });
                     }
                     
                     // --- 2. SUELO LAYER (Spaceship compartment auto-tiled plates) ---
@@ -1450,7 +2072,7 @@ int main(void) {
                             }
                             
                             Rectangle tileSrc = { (float)tileCol * 32.0f, 2.0f * 32.0f, 32.0f, 32.0f };
-                            DrawModelEx(floorModel, (Vector3){ px, 0.0f, pz }, (Vector3){ 1.0f, 0.0f, 0.0f }, -90.0f, (Vector3){ 1.0f, 1.0f, 1.0f }, WHITE);
+                            DrawFloorTile(envSpritesheet, tileSrc, (Vector3){ px, 0.0f, pz }, (Vector2){ 1.0f, 1.0f }, WHITE);
                         }
                     }
                     
@@ -1469,25 +2091,28 @@ int main(void) {
                                 if (x == 0 && z == 10 && room.doors[2]) isDoorway = true;
                                 if (x == 20 && z == 10 && room.doors[3]) isDoorway = true;
                                 
+                                int wallCol = tileOffsetCol + room.wallTileVariants[z][x];
+                                Rectangle wallSrc = { (float)wallCol * 32.0f, 0.0f, 32.0f, 32.0f };
+                                
                                 if (isDoorway) {
                                     if (!room.cleared) {
-                                        // locked warning columns
-                                        DrawModelEx(cubeModel, (Vector3){ px, 2.0f, pz }, (Vector3){ 0.0f, 1.0f, 0.0f }, 0.0f, (Vector3){ 1.0f, 4.0f, 1.0f }, RED);
+                                        // locked door (red cave block!)
+                                        DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ px, 2.0f, pz }, (Vector3){ 1.0f, 4.0f, 1.0f }, RED);
                                     } else {
-                                        // open entryway overlay
-                                        DrawBillboardRec(camera, envSpritesheet, (Rectangle){ (float)tileOffsetCol * 32.0f, 4.0f * 32.0f, 32.0f, 32.0f }, (Vector3){ px, 1.0f, pz }, (Vector2){ 1.0f, 2.0f }, Fade(CYAN, 0.7f));
+                                        // open doorway floor tile path
+                                        Rectangle openPathSrc = { (float)tileOffsetCol * 32.0f, 2.0f * 32.0f, 32.0f, 32.0f };
+                                        DrawFloorTile(envSpritesheet, openPathSrc, (Vector3){ px, 0.0f, pz }, (Vector2){ 1.0f, 1.0f }, WHITE);
                                     }
                                 } else {
-                                    int wallCol = tileOffsetCol + room.wallTileVariants[z][x];
-                                    Rectangle wallSrc = { (float)wallCol * 32.0f, 0.0f, 32.0f, 32.0f };
-                                    DrawModelEx(cubeModel, (Vector3){ px, 2.0f, pz }, (Vector3){ 0.0f, 1.0f, 0.0f }, 0.0f, (Vector3){ 1.0f, 4.0f, 1.0f }, WHITE);
+                                    DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ px, 2.0f, pz }, (Vector3){ 1.0f, 4.0f, 1.0f }, WHITE);
                                 }
                             }
                         }
                     }
                     
                     for (int i = 0; i < room.numPillars; i++) {
-                        DrawModelEx(cubeModel, room.pillars[i], (Vector3){ 0.0f, 1.0f, 0.0f }, 0.0f, (Vector3){ 1.6f, 4.0f, 1.6f }, GRAY);
+                        Rectangle pillarSrc = { (float)tileOffsetCol * 32.0f, 0.0f, 32.0f, 32.0f };
+                        DrawWallBlock(envSpritesheet, pillarSrc, room.pillars[i], (Vector3){ 1.6f, 4.0f, 1.6f }, WHITE);
                     }
                     
                     // Render Toxic Gas clouds on the ground flat
@@ -1502,6 +2127,45 @@ int main(void) {
                     // --- 4. Z-SORTED ENTITIES GATHERING ---
                     billCount = 0;
                     
+                    // Gather Room Decorations (moss, grass, flowers, mushrooms, beetles, fireflies)
+                    for (int d = 0; d < room.numDecorations; d++) {
+                        Decoration &dec = room.decorations[d];
+                        if (!dec.active) continue;
+                        
+                        Rectangle src = { 0 };
+                        Vector2 size = { 1.0f, 1.0f };
+                        
+                        if (dec.isInsect) {
+                            int frame = (int)dec.animTimer % 3;
+                            if (dec.isFly) {
+                                // Firefly (row 6)
+                                src = (Rectangle){ (float)frame * 32.0f, 6.0f * 32.0f, 32.0f, 32.0f };
+                                size = (Vector2){ 0.7f, 0.7f };
+                            } else {
+                                // Beetle (row 5)
+                                src = (Rectangle){ (float)frame * 32.0f, 5.0f * 32.0f, 32.0f, 32.0f };
+                                size = (Vector2){ 0.65f, 0.65f };
+                            }
+                        } else {
+                            // Flora (row 4)
+                            src = (Rectangle){ (float)dec.type * 32.0f, 4.0f * 32.0f, 32.0f, 32.0f };
+                            if (dec.type <= 1) { // Moss
+                                size = (Vector2){ 1.3f, 1.3f };
+                            } else if (dec.type == 7) { // Stalagmite
+                                size = (Vector2){ 0.9f, 0.9f };
+                            }
+                        }
+                        
+                        Vector3 decRenderPos = dec.position;
+                        if (dec.type <= 1) { // Moss lies very close to the ground
+                            decRenderPos.y = 0.05f;
+                        } else if (!dec.isInsect || !dec.isFly) {
+                            decRenderPos.y = size.y / 2.0f; // stand up flora
+                        }
+                        
+                        AddBillboardToRender(decRenderPos, envSpritesheet, src, size, Fade(WHITE, dec.alpha), 0, camera);
+                    }
+                    
                     // Ground items
                     for (int i = 0; i < room.numItems; i++) {
                         GroundItem &it = room.items[i];
@@ -1510,7 +2174,7 @@ int main(void) {
                             float bounceY = it.position.y + sinf(it.animTimer) * 0.15f;
                             Vector3 bouncePos = { it.position.x, bounceY, it.position.z };
                             Rectangle src = { (float)it.type * 32.0f, 7.0f * 32.0f, 32.0f, 32.0f };
-                            AddBillboardToRender(bouncePos, charSpritesheet, src, (Vector2){ 1.1f, 1.1f }, WHITE, camera);
+                            AddBillboardToRender(bouncePos, charSpritesheet, src, (Vector2){ 1.1f, 1.1f }, WHITE, 1, camera);
                         }
                     }
                     
@@ -1520,7 +2184,7 @@ int main(void) {
                             int col = projectiles[i].isEnemy ? 1 : projectiles[i].isAcid ? 2 : 0;
                             Rectangle src = { (float)col * 32.0f, 6.0f * 32.0f, 32.0f, 32.0f };
                             Vector2 sz = projectiles[i].isAcid ? (Vector2){ 1.3f, 1.3f } : (Vector2){ 0.8f, 0.8f };
-                            AddBillboardToRender(projectiles[i].position, charSpritesheet, src, sz, WHITE, camera);
+                            AddBillboardToRender(projectiles[i].position, charSpritesheet, src, sz, WHITE, 1, camera);
                         }
                     }
                     
@@ -1528,7 +2192,7 @@ int main(void) {
                     for (int i = 0; i < MAX_IMPACTS; i++) {
                         if (impacts[i].active) {
                             Rectangle src = { (float)(3 + impacts[i].frame) * 32.0f, 6.0f * 32.0f, 32.0f, 32.0f };
-                            AddBillboardToRender(impacts[i].position, charSpritesheet, src, (Vector2){ 1.3f, 1.3f }, WHITE, camera);
+                            AddBillboardToRender(impacts[i].position, charSpritesheet, src, (Vector2){ 1.3f, 1.3f }, WHITE, 1, camera);
                         }
                     }
                     
@@ -1562,7 +2226,7 @@ int main(void) {
                         }
                         
                         Vector3 billPos = { enemy.position.x, enemy.position.y + (enemy.isBoss ? 0.3f : 0.1f), enemy.position.z };
-                        AddBillboardToRender(billPos, charSpritesheet, srcRec, size, tint, camera);
+                        AddBillboardToRender(billPos, charSpritesheet, srcRec, size, tint, 1, camera);
                     }
                     
                     // Gather Player (Stacked)
@@ -1573,7 +2237,7 @@ int main(void) {
                         int legRow = (player.direction.z < 0.0f) ? 2 : 1;
                         Rectangle legSrc = { (float)player.animFrame * 32.0f, (float)legRow * 32.0f, 32.0f, 32.0f };
                         Vector3 legPos = { player.position.x, player.position.y - 0.2f, player.position.z };
-                        AddBillboardToRender(legPos, charSpritesheet, legSrc, (Vector2){ 1.8f, 1.8f }, tint, camera);
+                        AddBillboardToRender(legPos, charSpritesheet, legSrc, (Vector2){ 1.8f, 1.8f }, tint, 1, camera);
                         
                         // 2. Head
                         int headState = HEAD_LOOK_DOWN;
@@ -1597,24 +2261,28 @@ int main(void) {
                             32.0f 
                         };
                         Vector3 headPos = { player.position.x, player.position.y + 0.6f, player.position.z };
-                        AddBillboardToRender(headPos, charSpritesheet, headSrc, (Vector2){ 1.8f, 1.8f }, tint, camera);
+                        AddBillboardToRender(headPos, charSpritesheet, headSrc, (Vector2){ 1.8f, 1.8f }, tint, 1, camera);
                     }
                     
                     // Z-Sort dynamically
                     SortRenderBillboards();
                     
                     // Draw sorted buffer (100% clean transparency overlaps!)
+                    rlDisableDepthMask();
                     for (int i = 0; i < billCount; i++) {
                         DrawBillboardRec(camera, billBuffer[i].texture, billBuffer[i].source, billBuffer[i].position, billBuffer[i].size, billBuffer[i].tint);
                     }
+                    rlEnableDepthMask();
                     
-                    // Draw sparks falling on top
+                    // Draw sparks falling on top (with perfect transparent alpha blending!)
+                    rlDisableDepthMask();
                     for (int i = 0; i < MAX_PARTICLES; i++) {
                         if (particles[i].active && !particles[i].isGas) {
                             float alpha = particles[i].life / particles[i].maxLife;
-                            DrawCube(particles[i].position, 0.15f, 0.15f, 0.15f, Fade(particles[i].color, alpha));
+                            DrawBillboardRec(camera, charSpritesheet, (Rectangle){ 128.0f, 192.0f, 32.0f, 32.0f }, particles[i].position, (Vector2){ 0.35f, 0.35f }, Fade(particles[i].color, alpha));
                         }
                     }
+                    rlEnableDepthMask();
                     
                     // 3D reticle
                     DrawCircle3D(mouseIntersect, 0.4f, (Vector3){ 1.0f, 0.0f, 0.0f }, 90.0f, Fade(RED, 0.6f));
