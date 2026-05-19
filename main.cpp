@@ -96,7 +96,7 @@ Vector3 GetMouseGroundIntersection(Camera3D camera);
 
 const Color CYAN = (Color){ 0, 240, 240, 255 };
 enum State { STATE_IDLE = 0, STATE_RUN, STATE_ATTACK, STATE_HURT, STATE_DEAD };
-enum GameScreen { SCREEN_TITLE, SCREEN_GAMEPLAY, SCREEN_GAMEOVER, SCREEN_VICTORY, SCREEN_ROOM_TRANSITION };
+enum GameScreen { SCREEN_TITLE, SCREEN_INTRO, SCREEN_GAMEPLAY, SCREEN_GAMEOVER, SCREEN_VICTORY, SCREEN_ROOM_TRANSITION };
 enum Difficulty { DIFF_EASY, DIFF_NORMAL, DIFF_HARD };
 
 enum HeadState {
@@ -273,6 +273,7 @@ int nextRoomY = 2;
 float transitionTimer = 0.0f;
 Vector3 transitionPlayerStart;
 Vector3 transitionPlayerEnd;
+float introTimer = 0.0f;
 
 void SpawnParticles(Vector3 pos, Color color, int count, bool isGas = false) {
     for (int k = 0; k < count; k++) {
@@ -344,8 +345,8 @@ void CleanImageBackground(Image *image, Color backgroundColor) {
     Color *pixels = (Color*)image->data;
     int numPixels = image->width * image->height;
     for (int i = 0; i < numPixels; i++) {
-        // Tolerance match for pure black or very dark colors (almost black, e.g. R, G, B all less than 15)
-        bool isBlackKey = (pixels[i].r < 15 && pixels[i].g < 15 && pixels[i].b < 15);
+        // Tolerance match for pure black or very dark colors (almost black, e.g. R, G, B all less than 32)
+        bool isBlackKey = (pixels[i].r < 32 && pixels[i].g < 32 && pixels[i].b < 32);
         // Also support classic magenta chroma key
         bool isMagentaKey = (pixels[i].r > 240 && pixels[i].g < 15 && pixels[i].b > 240);
         
@@ -1210,13 +1211,22 @@ struct RenderBillboard {
 RenderBillboard billBuffer[MAX_RENDER_BILLBOARDS];
 int billCount = 0;
 
-void AddBillboardToRender(Vector3 pos, Texture2D tex, Rectangle src, Vector2 sz, Color col, int layer, Camera3D camera) {
+void AddBillboardToRender(Vector3 pos, Texture2D tex, Rectangle src, Vector2 sz, Color col, int layer, Camera3D camera, float depthOffset = 0.0f) {
     if (billCount >= MAX_RENDER_BILLBOARDS) return;
     
     Vector3 camToPos = Vector3Subtract(pos, camera.position);
-    float depth = Vector3Length(camToPos);
+    float dist = Vector3Length(camToPos);
     
-    billBuffer[billCount++] = { pos, tex, src, sz, col, depth, layer };
+    Vector3 renderPos = pos;
+    if (layer == 1 && dist > 0.1f) {
+        // Shift characters and dynamic objects slightly towards the camera to prevent them leaning back into walls/pillars
+        Vector3 dir = Vector3Scale(camToPos, 1.0f / dist);
+        renderPos = Vector3Subtract(pos, Vector3Scale(dir, 0.38f));
+    }
+    
+    float depth = dist + depthOffset;
+    
+    billBuffer[billCount++] = { renderPos, tex, src, sz, col, depth, layer };
 }
 
 void SortRenderBillboards() {
@@ -1271,10 +1281,10 @@ void DrawHeartUI(int x, int y, int health, int maxHearts) {
 }
 
 int main(void) {
-    const int screenWidth = 1280;
-    const int screenHeight = 720;
+    int screenWidth = 1280;
+    int screenHeight = 720;
     
-    SetConfigFlags(FLAG_MSAA_4X_HINT);
+    SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
     InitWindow(screenWidth, screenHeight, "PROJECT: DEHUMANIZER - Spaceship Rogue 2.5D");
     
     Camera3D camera = { 0 };
@@ -1352,18 +1362,59 @@ int main(void) {
     SetTargetFPS(60);
     
     while (!WindowShouldClose()) {
+        if (IsKeyPressed(KEY_F11) || (IsKeyDown(KEY_LEFT_ALT) && IsKeyPressed(KEY_ENTER))) {
+            ToggleFullscreen();
+        }
+        screenWidth = GetScreenWidth();
+        screenHeight = GetScreenHeight();
+        
         float dt = GetFrameTime();
         if (dt > 0.1f) dt = 0.1f;
         
-        if (currentScreen == SCREEN_TITLE) {
-            // Main menu controls
-            if (IsKeyPressed(KEY_ONE)) selectedDifficulty = DIFF_EASY;
-            if (IsKeyPressed(KEY_TWO)) selectedDifficulty = DIFF_NORMAL;
-            if (IsKeyPressed(KEY_THREE)) selectedDifficulty = DIFF_HARD;
+        if (currentScreen == SCREEN_TITLE || currentScreen == SCREEN_INTRO) {
+            // Slowly rotate the camera around the origin for a cool cinematic space-drift effect
+            float time = (float)GetTime() * 0.06f;
+            camera.position = (Vector3){ sinf(time) * 16.0f, 11.0f, cosf(time) * 16.0f };
+            camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
             
-            if (IsKeyPressed(KEY_ENTER)) {
-                ResetGame();
-                currentScreen = SCREEN_GAMEPLAY;
+            if (currentScreen == SCREEN_TITLE) {
+                if (IsKeyPressed(KEY_ONE)) selectedDifficulty = DIFF_EASY;
+                if (IsKeyPressed(KEY_TWO)) selectedDifficulty = DIFF_NORMAL;
+                if (IsKeyPressed(KEY_THREE)) selectedDifficulty = DIFF_HARD;
+                
+                Vector2 mousePos = GetMousePosition();
+                
+                // Menu buttons bounds (synchronized with rendering)
+                int btnW = 380;
+                int btnH = 34;
+                int startY = screenHeight / 2 - 15;
+                
+                Rectangle btnEasy = { (float)(screenWidth / 2 - btnW / 2), (float)startY, (float)btnW, (float)btnH };
+                Rectangle btnNorm = { (float)(screenWidth / 2 - btnW / 2), (float)(startY + 42), (float)btnW, (float)btnH };
+                Rectangle btnHard = { (float)(screenWidth / 2 - btnW / 2), (float)(startY + 84), (float)btnW, (float)btnH };
+                Rectangle btnStart = { (float)(screenWidth / 2 - 160), (float)(startY + 150), 320.0f, 45.0f };
+                
+                if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                    if (CheckCollisionPointRec(mousePos, btnEasy)) selectedDifficulty = DIFF_EASY;
+                    if (CheckCollisionPointRec(mousePos, btnNorm)) selectedDifficulty = DIFF_NORMAL;
+                    if (CheckCollisionPointRec(mousePos, btnHard)) selectedDifficulty = DIFF_HARD;
+                    if (CheckCollisionPointRec(mousePos, btnStart)) {
+                        currentScreen = SCREEN_INTRO;
+                        introTimer = 0.0f;
+                    }
+                }
+                
+                if (IsKeyPressed(KEY_ENTER)) {
+                    currentScreen = SCREEN_INTRO;
+                    introTimer = 0.0f;
+                }
+            }
+            else { // SCREEN_INTRO
+                introTimer += dt;
+                if (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                    ResetGame();
+                    currentScreen = SCREEN_GAMEPLAY;
+                }
             }
         }
         else if (currentScreen == SCREEN_GAMEOVER || currentScreen == SCREEN_VICTORY) {
@@ -1373,7 +1424,12 @@ int main(void) {
             }
         }
         else if (currentScreen == SCREEN_ROOM_TRANSITION) {
+            float oldTimer = transitionTimer;
             transitionTimer += dt * 2.0f;
+            if (oldTimer < 0.5f && transitionTimer >= 0.5f) {
+                currentRoomX = nextRoomX;
+                currentRoomY = nextRoomY;
+            }
             if (transitionTimer >= 1.0f) {
                 transitionTimer = 1.0f;
                 currentRoomX = nextRoomX;
@@ -2011,21 +2067,172 @@ int main(void) {
             ClearBackground((Color){ 6, 6, 12, 255 }); // space void background
             
             if (currentScreen == SCREEN_TITLE) {
-                DrawRectangle(0, 0, screenWidth, screenHeight, (Color){ 12, 14, 20, 255 });
-                DrawText("PROJECT: DEHUMANIZER", screenWidth / 2 - MeasureText("PROJECT: DEHUMANIZER", 50) / 2, screenHeight / 2 - 160, 50, GOLD);
-                DrawText("CAVE CRAWLER 2.5D", screenWidth / 2 - MeasureText("CAVE CRAWLER 2.5D", 20) / 2, screenHeight / 2 - 100, 20, CYAN);
+                // 1. Draw Starfield background in 3D
+                BeginMode3D(camera);
+                    for (int i = 0; i < MAX_STARS; i++) {
+                        float driftX = spaceStars[i].position.x - camera.position.x * spaceStars[i].parallaxFactor;
+                        float driftZ = spaceStars[i].position.z - camera.position.z * spaceStars[i].parallaxFactor;
+                        Vector3 starPos = { driftX, spaceStars[i].position.y, driftZ };
+                        DrawBillboardRec(camera, charSpritesheet, (Rectangle){ 96.0f, 192.0f, 32.0f, 32.0f }, starPos, (Vector2){ spaceStars[i].size, spaceStars[i].size }, spaceStars[i].color);
+                    }
+                EndMode3D();
                 
-                DrawText("SELECCIONA DIFICULTAD (Presiona numero):", screenWidth / 2 - 200, screenHeight / 2 - 40, 20, RAYWHITE);
+                // 2. Dark overlay for readability
+                DrawRectangle(0, 0, screenWidth, screenHeight, Fade(BLACK, 0.65f));
                 
-                Color easCol = (selectedDifficulty == DIFF_EASY) ? LIME : GRAY;
-                Color norCol = (selectedDifficulty == DIFF_NORMAL) ? GOLD : GRAY;
-                Color harCol = (selectedDifficulty == DIFF_HARD) ? RED : GRAY;
+                // Decorative grid/hud lines
+                DrawRectangleLines(20, 20, screenWidth - 40, screenHeight - 40, Fade(CYAN, 0.3f));
+                DrawRectangleLines(24, 24, screenWidth - 48, screenHeight - 48, Fade(CYAN, 0.1f));
                 
-                DrawText("1. FACIL (4 Corazones, Enemigos debiles, Drops abundantes)", screenWidth / 2 - 260, screenHeight / 2, 18, easCol);
-                DrawText("2. NORMAL (3 Corazones, Balance estandar)", screenWidth / 2 - 260, screenHeight / 2 + 25, 18, norCol);
-                DrawText("3. DIFICIL (Enemigos rapidos, Daño de 1 Corazon, Drops escasos)", screenWidth / 2 - 260, screenHeight / 2 + 50, 18, harCol);
+                // Corner decors
+                DrawRectangle(15, 15, 30, 6, CYAN);
+                DrawRectangle(15, 15, 6, 30, CYAN);
+                DrawRectangle(screenWidth - 45, 15, 30, 6, CYAN);
+                DrawRectangle(screenWidth - 21, 15, 6, 30, CYAN);
+                DrawRectangle(15, screenHeight - 21, 30, 6, CYAN);
+                DrawRectangle(15, screenHeight - 45, 6, 30, CYAN);
+                DrawRectangle(screenWidth - 45, screenHeight - 21, 30, 6, CYAN);
+                DrawRectangle(screenWidth - 21, screenHeight - 45, 6, 30, CYAN);
                 
-                DrawText("PRESIONA ENTER PARA INICIAR LA EXPLORACION", screenWidth / 2 - MeasureText("PRESIONA ENTER PARA INICIAR LA EXPLORACION", 22) / 2, screenHeight / 2 + 130, 22, WHITE);
+                // 3. Draw Title/Logo
+                const char *titleText = "PROJECT: DEHUMANIZER";
+                int titleSize = 48;
+                int titleW = MeasureText(titleText, titleSize);
+                int titleX = screenWidth / 2 - titleW / 2;
+                int titleY = screenHeight / 2 - 190;
+                if (titleY < 40) titleY = 40;
+                
+                // CRT Shadow effect
+                DrawText(titleText, titleX + 3, titleY + 3, titleSize, Fade(RED, 0.6f));
+                DrawText(titleText, titleX - 2, titleY - 2, titleSize, Fade(BLUE, 0.6f));
+                DrawText(titleText, titleX, titleY, titleSize, GOLD);
+                
+                const char *subText = "SPACESHIP ROGUE 2.5D CRAWLER";
+                int subSize = 18;
+                int subW = MeasureText(subText, subSize);
+                DrawText(subText, screenWidth / 2 - subW / 2, titleY + 55, subSize, Fade(CYAN, 0.9f));
+                
+                // 4. Draw interactive buttons
+                Vector2 mousePos = GetMousePosition();
+                int btnW = 380;
+                int btnH = 34;
+                int startY = screenHeight / 2 - 15;
+                
+                Rectangle btnEasy = { (float)(screenWidth / 2 - btnW / 2), (float)startY, (float)btnW, (float)btnH };
+                Rectangle btnNorm = { (float)(screenWidth / 2 - btnW / 2), (float)(startY + 42), (float)btnW, (float)btnH };
+                Rectangle btnHard = { (float)(screenWidth / 2 - btnW / 2), (float)(startY + 84), (float)btnW, (float)btnH };
+                Rectangle btnStart = { (float)(screenWidth / 2 - 160), (float)(startY + 150), 320.0f, 45.0f };
+                
+                // Easy button
+                bool easyHover = CheckCollisionPointRec(mousePos, btnEasy);
+                Color easyColor = (selectedDifficulty == DIFF_EASY) ? LIME : GRAY;
+                DrawRectangleRec(btnEasy, (selectedDifficulty == DIFF_EASY) ? Fade(LIME, 0.15f) : (easyHover ? Fade(GRAY, 0.1f) : BLANK));
+                DrawRectangleLinesEx(btnEasy, easyHover ? 2 : 1, easyColor);
+                DrawText("1. DIFICULTAD FACIL", btnEasy.x + 20, btnEasy.y + 8, 16, easyColor);
+                if (selectedDifficulty == DIFF_EASY) {
+                    DrawText("[4 CORAZONES - DROPS MULTIPLES]", btnEasy.x + btnEasy.width - 240, btnEasy.y + 11, 11, LIME);
+                }
+                
+                // Normal button
+                bool normHover = CheckCollisionPointRec(mousePos, btnNorm);
+                Color normColor = (selectedDifficulty == DIFF_NORMAL) ? GOLD : GRAY;
+                DrawRectangleRec(btnNorm, (selectedDifficulty == DIFF_NORMAL) ? Fade(GOLD, 0.15f) : (normHover ? Fade(GRAY, 0.1f) : BLANK));
+                DrawRectangleLinesEx(btnNorm, normHover ? 2 : 1, normColor);
+                DrawText("2. DIFICULTAD NORMAL", btnNorm.x + 20, btnNorm.y + 8, 16, normColor);
+                if (selectedDifficulty == DIFF_NORMAL) {
+                    DrawText("[3 CORAZONES - BALANCE ESTANDAR]", btnNorm.x + btnNorm.width - 240, btnNorm.y + 11, 11, GOLD);
+                }
+                
+                // Hard button
+                bool hardHover = CheckCollisionPointRec(mousePos, btnHard);
+                Color hardColor = (selectedDifficulty == DIFF_HARD) ? RED : GRAY;
+                DrawRectangleRec(btnHard, (selectedDifficulty == DIFF_HARD) ? Fade(RED, 0.15f) : (hardHover ? Fade(GRAY, 0.1f) : BLANK));
+                DrawRectangleLinesEx(btnHard, hardHover ? 2 : 1, hardColor);
+                DrawText("3. DIFICULTAD EXPERTO", btnHard.x + 20, btnHard.y + 8, 16, hardColor);
+                if (selectedDifficulty == DIFF_HARD) {
+                    DrawText("[DAÑO CRITICO - ENEMIGOS VELOCES]", btnHard.x + btnHard.width - 240, btnHard.y + 11, 11, RED);
+                }
+                
+                // Start button
+                bool startHover = CheckCollisionPointRec(mousePos, btnStart);
+                float startPulse = sinf((float)GetTime() * 5.0f) * 0.4f + 0.6f;
+                Color startBtnCol = startHover ? GOLD : Fade(GOLD, startPulse);
+                DrawRectangleRec(btnStart, startHover ? Fade(GOLD, 0.2f) : Fade(GOLD, 0.05f));
+                DrawRectangleLinesEx(btnStart, startHover ? 3 : 2, startBtnCol);
+                
+                const char *startLabel = "INICIAR OPERACION";
+                int slSize = 20;
+                int slW = MeasureText(startLabel, slSize);
+                DrawText(startLabel, btnStart.x + btnStart.width / 2 - slW / 2, btnStart.y + btnStart.height / 2 - slSize / 2, slSize, startBtnCol);
+            }
+            else if (currentScreen == SCREEN_INTRO) {
+                // 1. Draw Starfield background
+                BeginMode3D(camera);
+                    for (int i = 0; i < MAX_STARS; i++) {
+                        float driftX = spaceStars[i].position.x - camera.position.x * spaceStars[i].parallaxFactor;
+                        float driftZ = spaceStars[i].position.z - camera.position.z * spaceStars[i].parallaxFactor;
+                        Vector3 starPos = { driftX, spaceStars[i].position.y, driftZ };
+                        DrawBillboardRec(camera, charSpritesheet, (Rectangle){ 96.0f, 192.0f, 32.0f, 32.0f }, starPos, (Vector2){ spaceStars[i].size, spaceStars[i].size }, spaceStars[i].color);
+                    }
+                EndMode3D();
+                
+                // Dark overlay to make text readable
+                DrawRectangle(0, 0, screenWidth, screenHeight, Fade(BLACK, 0.75f));
+                
+                // Render decorative borders (cyber sci-fi style HUD)
+                DrawRectangleLines(30, 30, screenWidth - 60, screenHeight - 60, Fade(CYAN, 0.4f));
+                DrawRectangleLines(34, 34, screenWidth - 68, screenHeight - 68, Fade(CYAN, 0.15f));
+                
+                // Story lines
+                const char *storyLines[] = {
+                    "REGISTRO DE MISION: NAVE DE INVESTIGACION USG DEHUMANIZER",
+                    "FECHA ESTELAR: 2146.05.19",
+                    "",
+                    "Hace 48 horas, se perdio toda conexion con la nave medica insignia.",
+                    "Un patogeno alienigena desconocido ha infestado los sistemas biologicos,",
+                    "mutando a la tripulacion en aberraciones ciberneticas hostiles.",
+                    "",
+                    "Como ultimo miembro del escuadron de limpieza tactica:",
+                    "Tu mision es infiltrarte en la nave a traves del muelle de carga,",
+                    "purgar la infestacion de cada compartimento de combate,",
+                    "y sobrecargar el nucleo del reactor principal para vaporizar la amenaza.",
+                    "",
+                    "INSTRUCCIONES DE SUPERVIVENCIA:",
+                    "- Moverse: Teclas [W], [A], [S], [D]",
+                    "- Apuntar y Disparar: Mover el MOUSE y boton CLIC IZQUIERDO",
+                    "- Cambiar Sala: Cruza los pasillos cuando esten despejados",
+                    "- Mejoras: Encuentra las salas del tesoro para aumentar tu potencia"
+                };
+                int numLines = 17;
+                int startY = screenHeight / 2 - 220;
+                if (startY < 45) startY = 45;
+                
+                for (int i = 0; i < numLines; i++) {
+                    Color col = RAYWHITE;
+                    int size = 18;
+                    if (i == 0) { col = GOLD; size = 20; }
+                    else if (i == 1) { col = CYAN; size = 15; }
+                    else if (i >= 12) { col = LIME; size = 16; }
+                    
+                    int textW = MeasureText(storyLines[i], size);
+                    
+                    // Typewriter fade-in effect based on introTimer
+                    float lineDelay = (float)i * 0.4f;
+                    float lineProgress = (introTimer - lineDelay) * 2.0f;
+                    if (lineProgress < 0.0f) lineProgress = 0.0f;
+                    if (lineProgress > 1.0f) lineProgress = 1.0f;
+                    
+                    Color lineCol = Fade(col, lineProgress);
+                    DrawText(storyLines[i], screenWidth / 2 - textW / 2, startY + i * 24, size, lineCol);
+                }
+                
+                // Pulsing indicator to continue
+                if (introTimer > 1.5f) {
+                    float pulse = sinf(introTimer * 4.0f) * 0.5f + 0.5f;
+                    const char *prompt = "PRESIONA ENTER O CLIC PARA INICIAR LA OPERACION";
+                    int pW = MeasureText(prompt, 20);
+                    DrawText(prompt, screenWidth / 2 - pW / 2, screenHeight - 90, 20, Fade(GOLD, pulse));
+                }
             }
             else {
                 Room &room = dungeon[currentRoomY][currentRoomX];
@@ -2237,7 +2444,7 @@ int main(void) {
                         int legRow = (player.direction.z < 0.0f) ? 2 : 1;
                         Rectangle legSrc = { (float)player.animFrame * 32.0f, (float)legRow * 32.0f, 32.0f, 32.0f };
                         Vector3 legPos = { player.position.x, player.position.y - 0.2f, player.position.z };
-                        AddBillboardToRender(legPos, charSpritesheet, legSrc, (Vector2){ 1.8f, 1.8f }, tint, 1, camera);
+                        AddBillboardToRender(legPos, charSpritesheet, legSrc, (Vector2){ 1.8f, 1.8f }, tint, 1, camera, 0.0f);
                         
                         // 2. Head
                         int headState = HEAD_LOOK_DOWN;
@@ -2261,7 +2468,7 @@ int main(void) {
                             32.0f 
                         };
                         Vector3 headPos = { player.position.x, player.position.y + 0.6f, player.position.z };
-                        AddBillboardToRender(headPos, charSpritesheet, headSrc, (Vector2){ 1.8f, 1.8f }, tint, 1, camera);
+                        AddBillboardToRender(headPos, charSpritesheet, headSrc, (Vector2){ 1.8f, 1.8f }, tint, 1, camera, -0.01f);
                     }
                     
                     // Z-Sort dynamically
@@ -2368,6 +2575,15 @@ int main(void) {
                     DrawText("Has escapado por la capsula del reactor nuclear del Jefe.", screenWidth / 2 - MeasureText("Has escapado por la capsula del reactor nuclear del Jefe.", 20) / 2, screenHeight / 2, 20, GOLD);
                     DrawText(TextFormat("TIEMPO FINAL: %.2fs", gameTimer), screenWidth / 2 - 80, screenHeight / 2 + 40, 20, WHITE);
                     DrawText("PRESIONA 'R' PARA REGENERAR UNA NUEVA NAVE PROCEDURAL", screenWidth / 2 - MeasureText("PRESIONA 'R' PARA REGENERAR UNA NUEVA NAVE PROCEDURAL", 20) / 2, screenHeight / 2 + 100, 20, RAYWHITE);
+                }
+                else if (currentScreen == SCREEN_ROOM_TRANSITION) {
+                    float alpha = 0.0f;
+                    if (transitionTimer < 0.5f) {
+                        alpha = transitionTimer / 0.5f;
+                    } else {
+                        alpha = 1.0f - (transitionTimer - 0.5f) / 0.5f;
+                    }
+                    DrawRectangle(0, 0, screenWidth, screenHeight, Fade(BLACK, alpha));
                 }
             }
             
