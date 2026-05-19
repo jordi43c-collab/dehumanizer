@@ -1,0 +1,23 @@
+# Compilacion y Binarios
+build/
+bin/
+obj/
+CMakeFiles/
+CMakeCache.txt
+*.cmake
+Makefile
+
+# Ejecutables
+*.exe
+*.o
+*.obj
+*.pdb
+*.ilk
+
+# IDEs y Editores
+.vs/
+.vscode/
+.idea/
+CMakeSettings.json
+.gemini/
+antigravity/
