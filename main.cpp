@@ -3,6 +3,10 @@
 #include "rlgl.h"
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+
+#define MAX_VORTICES 16
 
 // Custom Textured 3D Quad rendering helpers for pixel-perfect alignment
 void DrawFloorTile(Texture2D texture, Rectangle source, Vector3 position, Vector2 size, Color tint) {
@@ -93,10 +97,11 @@ void DrawWallBlock(Texture2D texture, Rectangle source, Vector3 position, Vector
 
 // Enums & Structs
 Vector3 GetMouseGroundIntersection(Camera3D camera);
+void SpawnParticles(Vector3 pos, Color color, int count, bool isGas = false);
 
 const Color CYAN = (Color){ 0, 240, 240, 255 };
 enum State { STATE_IDLE = 0, STATE_RUN, STATE_ATTACK, STATE_HURT, STATE_DEAD };
-enum GameScreen { SCREEN_TITLE, SCREEN_INTRO, SCREEN_GAMEPLAY, SCREEN_GAMEOVER, SCREEN_VICTORY, SCREEN_ROOM_TRANSITION };
+enum GameScreen { SCREEN_TITLE, SCREEN_NEXUS, SCREEN_INTRO, SCREEN_GAMEPLAY, SCREEN_GAMEOVER, SCREEN_VICTORY, SCREEN_ROOM_TRANSITION };
 enum Difficulty { DIFF_EASY, DIFF_NORMAL, DIFF_HARD };
 
 enum HeadState {
@@ -126,6 +131,141 @@ enum ItemType {
     ITEM_ACID = 3
 };
 
+// --- PLANET & META-PROGRESSION STRUCTS ---
+enum AtmosphericHazardType {
+    HAZARD_NONE = 0,
+    HAZARD_SOLAR_STORM = 1,
+    HAZARD_TOXIC_FOG = 2,
+    HAZARD_FROZEN_WASTE = 3
+};
+
+struct PlanetEnvironment {
+    char name[64];
+    float gravityMultiplier;      // 1.0f = standard gravity, <1.0f = low, >1.0f = high
+    AtmosphericHazardType hazard;
+    float hazardIntensity;        // Range 0.0f to 1.0f
+    Color atmosphericTint;        // Camera viewport overlay color
+    float groundFriction;         // X-Z movement friction coefficient
+};
+
+struct GreenhouseModule {
+    int level;                      // 0 (Unbuilt) to 3
+    float healingEfficiency;        // Scale: 1.0f to 1.50f
+    float passiveHealOnRoomClear;   // Probability: 0.0f to 0.35f
+    int herbYieldCount;
+};
+
+struct ArmoryModule {
+    int level;                      // 0 to 3
+    float baseDamageMultiplier;     // Scale: 1.0f to 1.45f
+    int unlockedModSlots;           // 1, 2, or 3 slots
+    bool hasQuantumTech;            // Quantum refraction enabled
+};
+
+struct EngineRoomModule {
+    int level;                      // 0 to 3
+    float travelRangeLightYears;    // Distance capability
+    float fuelEfficiency;           // Travel resource consumption factor
+    float gravityStabilization;     // Mitigates gravity-based speed penalty
+};
+
+struct MothershipSaveData {
+    GreenhouseModule greenhouse;
+    ArmoryModule armory;
+    EngineRoomModule engineRoom;
+    int isotopicResources;          // Core currency for upgrades
+    int rescuedCrew;                // Rescued crew count
+    int totalRunsCompleted;         // Run history count
+    bool unlockedBounce;
+    bool unlockedPiercing;
+    bool unlockedQuantum;
+    bool equippedBounce;
+    bool equippedPiercing;
+    bool equippedQuantum;
+    unsigned int checksum;          // Verification key
+};
+
+struct CloneStatus {
+    int cloneIndex;                 // Clone print number (1, 2, ...)
+    float memoryCoherence;          // sanity percentage (0.0f to 100.0f)
+    float paranoiaLevel;            // paranoia percentage (0.0f to 100.0f)
+    int audioGlitchesCount;
+    float synapicDegradationRate;   // degradation factor multiplier
+};
+
+void SaveCloneStatus(CloneStatus status, const char *filePath) {
+    FILE *file = fopen(filePath, "wb");
+    if (file != NULL) {
+        fwrite(&status, sizeof(CloneStatus), 1, file);
+        fclose(file);
+    }
+}
+
+CloneStatus LoadCloneStatus(const char *filePath) {
+    CloneStatus status = { 1, 100.0f, 0.0f, 0, 1.0f };
+    FILE *file = fopen(filePath, "rb");
+    if (file != NULL) {
+        fread(&status, sizeof(CloneStatus), 1, file);
+        fclose(file);
+    }
+    return status;
+}
+
+// --- WEAPON MODULES & SHADERS ---
+struct ProjectileModuleData {
+    int id;
+    char name[32];
+    float damageMod;
+    float speedMultiplier;
+    bool hasBounce;
+    bool hasGravityPull;
+};
+
+struct TriggerModuleData {
+    int id;
+    char name[32];
+    float cooldownMultiplier;
+    int projectilesCount;
+    float spreadAngleDegrees;
+};
+
+struct ModifierModuleData {
+    int id;
+    char name[32];
+    float elementalDamage;
+    bool hasPiercing;
+    bool leavesTrail;
+};
+
+struct WeaponChassis {
+    char name[32];
+    float baseDamage;
+    float baseCooldown;
+    ProjectileModuleData projectileSlot;
+    TriggerModuleData triggerSlot;
+    ModifierModuleData modifierSlot;
+    float currentCooldownTimer;
+};
+
+struct GravityVortex {
+    Vector3 position;
+    float radius;
+    float pullForce;
+    float damagePerSecond;
+    float durationRemaining;
+    bool active;
+};
+
+struct Relic {
+    char name[64];
+    char description[256];
+    bool active;
+    float bonusDamagePercent;
+    float speedMultiplier;
+    float maxHealthModifier;
+    float sanityImpact;
+};
+
 struct Entity {
     Vector3 position;
     float radius;
@@ -146,6 +286,19 @@ struct Entity {
     // Spaceship upgrades / Enemy type variables
     EnemyType enemyType;
     float gasTimer; // AoE Gas trail timer
+    
+    // Expanded physics properties
+    float verticalVelocity;
+    bool isGrounded;
+    float suitIntegrity;
+    float oxygenLevel;
+    float hazardTimer;
+    
+    // Weapon module & Relic state slots
+    WeaponChassis activeWeapon;
+    bool relicEyeActive;
+    bool relicHeartActive;
+    bool relicBootsActive;
 };
 
 struct Projectile {
@@ -156,6 +309,12 @@ struct Projectile {
     bool active;
     bool isEnemy;
     bool isAcid; // Acid glands poison bubble
+    
+    // Module effects
+    bool hasBounce;
+    bool hasPiercing;
+    bool hasRefraction;
+    int pierceCount;
 };
 
 struct Particle {
@@ -166,6 +325,7 @@ struct Particle {
     float maxLife;
     bool active;
     bool isGas; // Toxic gas cloud particle
+    bool isAtmospheric;
 };
 
 struct ImpactEffect {
@@ -256,11 +416,115 @@ Star spaceStars[MAX_STARS] = { 0 };
 int currentRoomX = 2;
 int currentRoomY = 2;
 Difficulty selectedDifficulty = DIFF_NORMAL;
+int selectedPlanetIdx = 0;
+int activeCrewDialogIdx = 1;
+int activeLeftTab = 0; // 0 = Modules, 1 = Weapon Customizer
+int activeNexusOverlay = 0; // 0 = Walk Mode, 1 = Left Panel (Upgrades/Mods), 2 = Right Panel (Star Map)
 
 // Upgrade states
 bool hasCyberEye = false;
 bool hasThrusterBoots = false;
 bool hasAcidGlands = false;
+
+// --- PLANET & SYSTEM GLOBALS ---
+PlanetEnvironment currentPlanet = { 
+    "CYON-IV (Planeta Helado)", 
+    0.6f,                      // Low gravity
+    HAZARD_FROZEN_WASTE, 
+    0.5f,                      // Hazard intensity
+    (Color){ 100, 180, 255, 40 }, 
+    0.85f                      // Friction
+};
+
+void GenerateProceduralPlanet() {
+    int randType = selectedPlanetIdx;
+    if (randType == 3) {
+        strcpy(currentPlanet.name, "CYON-IV (Planeta Helado)");
+        currentPlanet.gravityMultiplier = 0.6f;
+        currentPlanet.hazard = HAZARD_FROZEN_WASTE;
+        currentPlanet.hazardIntensity = 0.4f + (float)GetRandomValue(0, 10) * 0.05f;
+        currentPlanet.atmosphericTint = (Color){ 100, 180, 255, 30 };
+        currentPlanet.groundFriction = 0.85f;
+    } else if (randType == 1) {
+        strcpy(currentPlanet.name, "SOLARIS-IX (Tormentas Solares)");
+        currentPlanet.gravityMultiplier = 1.2f;
+        currentPlanet.hazard = HAZARD_SOLAR_STORM;
+        currentPlanet.hazardIntensity = 0.5f + (float)GetRandomValue(0, 10) * 0.04f;
+        currentPlanet.atmosphericTint = (Color){ 255, 120, 0, 20 };
+        currentPlanet.groundFriction = 0.95f;
+    } else if (randType == 2) {
+        strcpy(currentPlanet.name, "ZUL-GHAR (Niebla Toxica)");
+        currentPlanet.gravityMultiplier = 0.9f;
+        currentPlanet.hazard = HAZARD_TOXIC_FOG;
+        currentPlanet.hazardIntensity = 0.4f + (float)GetRandomValue(0, 10) * 0.04f;
+        currentPlanet.atmosphericTint = (Color){ 120, 255, 120, 25 };
+        currentPlanet.groundFriction = 0.9f;
+    } else {
+        strcpy(currentPlanet.name, "AETHER (Gravedad Estandar)");
+        currentPlanet.gravityMultiplier = 1.0f;
+        currentPlanet.hazard = HAZARD_NONE;
+        currentPlanet.hazardIntensity = 0.0f;
+        currentPlanet.atmosphericTint = (Color){ 255, 255, 255, 0 };
+        currentPlanet.groundFriction = 0.98f;
+    }
+}
+
+MothershipSaveData motherShip = {
+    {1, 1.0f, 0.0f, 0},        // Greenhouse level 1
+    {1, 1.0f, 1, false},       // Armory level 1
+    {1, 5.0f, 1.0f, 0.0f},     // Engine room level 1
+    0, 0, 0,                   // Resources, crew, runs
+    false, false, false,       // unlockedBounce, unlockedPiercing, unlockedQuantum
+    false, false, false,       // equippedBounce, equippedPiercing, equippedQuantum
+    0                          // checksum
+};
+
+CloneStatus currentClone = { 1, 100.0f, 0.0f, 0, 1.0f };
+GravityVortex activeVortices[MAX_VORTICES] = { 0 };
+
+Relic activeRelics[3] = {
+    { "Ojo de la Nebulosa", "Doble dano critico, pero aberracion cromatica si tu salud baja de 30%.", false, 0.35f, 1.0f, 0.0f, 20.0f },
+    { "Corazon de Enjambre", "Drones de plasma orbitales. Curacion recortada a la mitad.", false, 0.0f, 0.9f, 0.0f, 15.0f },
+    { "Servomotores de Taquion", "Dashes continuos de velocidad. Desenfoque de movimiento persistente.", false, 0.0f, 1.4f, 0.0f, 25.0f }
+};
+
+// Shader source code strings compiled at runtime
+const char* NebulaEyeShaderSource = 
+    "#version 330\n"
+    "in vec2 fragTexCoord;\n"
+    "out vec4 finalColor;\n"
+    "uniform sampler2D texture0;\n"
+    "uniform float aberrationStrength;\n"
+    "uniform float noiseIntensity;\n"
+    "float rand(vec2 co) { return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453); }\n"
+    "void main() {\n"
+    "    vec2 uv = fragTexCoord;\n"
+    "    vec4 rCol = texture(texture0, uv + vec2(aberrationStrength, 0.0));\n"
+    "    vec4 gCol = texture(texture0, uv);\n"
+    "    vec4 bCol = texture(texture0, uv - vec2(aberrationStrength, 0.0));\n"
+    "    vec4 color = vec4(rCol.r, gCol.g, bCol.b, 1.0);\n"
+    "    float noise = (rand(uv) - 0.5) * noiseIntensity;\n"
+    "    finalColor = color + vec4(noise, noise, noise, 0.0);\n"
+    "}\n";
+
+const char* TachyonBootsShaderSource =
+    "#version 330\n"
+    "in vec2 fragTexCoord;\n"
+    "out vec4 finalColor;\n"
+    "uniform sampler2D texture0;\n"
+    "uniform float blurAmount;\n"
+    "void main() {\n"
+    "    vec2 uv = fragTexCoord;\n"
+    "    vec4 color = vec4(0.0);\n"
+    "    float total = 0.0;\n"
+    "    for (float x = -3.0; x <= 3.0; x += 1.0) {\n"
+    "        color += texture(texture0, uv + vec2(x * blurAmount, 0.0));\n"
+    "        total += 1.0;\n"
+    "    }\n"
+    "    color /= total;\n"
+    "    float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));\n"
+    "    finalColor = vec4(gray * 0.5, gray * 1.3, gray * 1.5, 1.0);\n"
+    "}\n";
 
 // Heart health definitions
 int playerHearts = 3;
@@ -275,7 +539,199 @@ Vector3 transitionPlayerStart;
 Vector3 transitionPlayerEnd;
 float introTimer = 0.0f;
 
-void SpawnParticles(Vector3 pos, Color color, int count, bool isGas = false) {
+// --- PERSISTENCE & UTILITY FUNCTIONS ---
+
+unsigned int CalculateChecksum(const MothershipSaveData &data) {
+    unsigned int hash = 5381;
+    const unsigned char *ptr = (const unsigned char*)&data;
+    size_t size = sizeof(MothershipSaveData) - sizeof(unsigned int);
+    for (size_t i = 0; i < size; i++) {
+        hash = ((hash << 5) + hash) + ptr[i];
+    }
+    return hash;
+}
+
+bool SaveMothershipState(const MothershipSaveData &state, const char *filePath) {
+    MothershipSaveData dataToSave = state;
+    dataToSave.checksum = CalculateChecksum(dataToSave);
+    
+    FILE *file = fopen(filePath, "wb");
+    if (file == NULL) {
+        printf("Error: No se pudo escribir la meta-progresion en %s\n", filePath);
+        return false;
+    }
+    size_t written = fwrite(&dataToSave, sizeof(MothershipSaveData), 1, file);
+    fclose(file);
+    return (written == 1);
+}
+
+MothershipSaveData LoadMothershipState(const char *filePath) {
+    MothershipSaveData loadedData;
+    memset(&loadedData, 0, sizeof(MothershipSaveData));
+    loadedData.greenhouse.level = 1;
+    loadedData.greenhouse.healingEfficiency = 1.0f;
+    loadedData.armory.level = 1;
+    loadedData.armory.baseDamageMultiplier = 1.0f;
+    loadedData.armory.unlockedModSlots = 1;
+    loadedData.engineRoom.level = 1;
+    loadedData.engineRoom.travelRangeLightYears = 5.0f;
+    
+    FILE *file = fopen(filePath, "rb");
+    if (file == NULL) {
+        loadedData.unlockedBounce = false;
+        loadedData.unlockedPiercing = false;
+        loadedData.unlockedQuantum = false;
+        loadedData.equippedBounce = false;
+        loadedData.equippedPiercing = false;
+        loadedData.equippedQuantum = false;
+        return loadedData;
+    }
+    size_t read = fread(&loadedData, sizeof(MothershipSaveData), 1, file);
+    fclose(file);
+    
+    if (read == 1) {
+        unsigned int computed = CalculateChecksum(loadedData);
+        if (computed != loadedData.checksum) {
+            printf("Aviso: Checksum corrupto en el savefile. Reseteando a nivel seguro.\n");
+            memset(&loadedData, 0, sizeof(MothershipSaveData));
+            loadedData.greenhouse.level = 1;
+            loadedData.greenhouse.healingEfficiency = 1.0f;
+            loadedData.armory.level = 1;
+            loadedData.armory.baseDamageMultiplier = 1.0f;
+            loadedData.armory.unlockedModSlots = 1;
+            loadedData.engineRoom.level = 1;
+            loadedData.engineRoom.travelRangeLightYears = 5.0f;
+            loadedData.unlockedBounce = false;
+            loadedData.unlockedPiercing = false;
+            loadedData.unlockedQuantum = false;
+            loadedData.equippedBounce = false;
+            loadedData.equippedPiercing = false;
+            loadedData.equippedQuantum = false;
+        }
+    }
+    return loadedData;
+}
+
+// Gravity Vortex spawner & pull calculations
+void SpawnGravityVortex(Vector3 pos, float radius, float pullForce, float dps, float duration) {
+    for (int i = 0; i < MAX_VORTICES; i++) {
+        if (!activeVortices[i].active) {
+            activeVortices[i].position = pos;
+            activeVortices[i].radius = radius;
+            activeVortices[i].pullForce = pullForce;
+            activeVortices[i].damagePerSecond = dps;
+            activeVortices[i].durationRemaining = duration;
+            activeVortices[i].active = true;
+            break;
+        }
+    }
+}
+
+void UpdateGravityVortices(Entity *enemies, int numEnemies, float dt) {
+    for (int v = 0; v < MAX_VORTICES; v++) {
+        if (!activeVortices[v].active) continue;
+        
+        activeVortices[v].durationRemaining -= dt;
+        if (activeVortices[v].durationRemaining <= 0.0f) {
+            activeVortices[v].active = false;
+            continue;
+        }
+        
+        // Spawn orbital particles
+        if (GetRandomValue(0, 100) < 40) {
+            SpawnParticles(activeVortices[v].position, PURPLE, 2, true);
+        }
+        
+        for (int e = 0; e < numEnemies; e++) {
+            if (enemies[e].health <= 0.0f) continue;
+            
+            float dist = Vector3Distance(enemies[e].position, activeVortices[v].position);
+            if (dist <= activeVortices[v].radius && dist > 0.15f) {
+                Vector3 toVortex = Vector3Normalize(Vector3Subtract(activeVortices[v].position, enemies[e].position));
+                float pullStrength = activeVortices[v].pullForce * (1.0f - (dist / activeVortices[v].radius));
+                
+                enemies[e].position = Vector3Add(enemies[e].position, Vector3Scale(toVortex, pullStrength * dt));
+                if (activeVortices[v].damagePerSecond > 0.0f) {
+                    enemies[e].health -= activeVortices[v].damagePerSecond * dt;
+                }
+            }
+        }
+    }
+}
+
+// Text Glitch drawing
+void DrawTextGlitch(const char *text, int posX, int posY, int fontSize, Color color, float glitchIntensity) {
+    char tempBuffer[256];
+    strncpy(tempBuffer, text, sizeof(tempBuffer) - 1);
+    tempBuffer[sizeof(tempBuffer) - 1] = '\0';
+    
+    int len = (int)strlen(tempBuffer);
+    if (glitchIntensity > 0.1f) {
+        for (int i = 0; i < len; i++) {
+            if (tempBuffer[i] != ' ' && GetRandomValue(0, 100) < (int)(glitchIntensity * 22.0f)) {
+                const char glitchPool[] = "0101#@$%&*!?[]<>/\\";
+                tempBuffer[i] = glitchPool[GetRandomValue(0, sizeof(glitchPool) - 2)];
+            }
+        }
+    }
+    
+    int offsetX = 0;
+    int offsetY = 0;
+    if (glitchIntensity > 0.35f) {
+        offsetX = GetRandomValue(-4, 4) * (int)(glitchIntensity * 1.8f);
+        offsetY = GetRandomValue(-4, 4) * (int)(glitchIntensity * 1.8f);
+    }
+    
+    DrawText(tempBuffer, posX + offsetX, posY + offsetY, fontSize, color);
+}
+
+// Detailed HUD state
+void DrawDehumanizerHUD(const CloneStatus &clone, int currentHealth, int maxHealth, int shieldValue, float timeSec) {
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
+    
+    float glitchIntensity = 0.0f;
+    Color hudColor = GREEN;
+    
+    if (clone.cloneIndex > 5 && clone.cloneIndex <= 20) {
+        glitchIntensity = 0.25f;
+        hudColor = (Color){ 220, 180, 50, 255 }; // Amber
+    } else if (clone.cloneIndex > 20) {
+        glitchIntensity = 0.85f;
+        float pulse = sinf(timeSec * 8.0f) * 0.5f + 0.5f;
+        hudColor = (Color){ (unsigned char)(180 + 75 * pulse), 10, 10, 255 }; // Pulsing Crimson
+    }
+    
+    int panelY = 15;
+    DrawRectangle(15, panelY, 320, 110, (Color){ 10, 10, 15, 220 });
+    DrawRectangleLines(15, panelY, 320, 110, hudColor);
+    
+    char cloneLabel[64];
+    sprintf(cloneLabel, "OPERADOR: CLON #%03d", clone.cloneIndex);
+    DrawTextGlitch(cloneLabel, 30, panelY + 12, 18, hudColor, glitchIntensity);
+    
+    char cohLabel[64];
+    sprintf(cohLabel, "COHERENCIA MEMORIA: %.1f%%", clone.memoryCoherence);
+    DrawTextGlitch(cohLabel, 30, panelY + 38, 14, hudColor, glitchIntensity * 0.5f);
+    
+    DrawRectangle(30, panelY + 58, 280, 8, BLACK);
+    DrawRectangle(30, panelY + 58, (int)(2.8f * (clone.memoryCoherence > 0.0f ? clone.memoryCoherence : 0.0f)), 8, hudColor);
+    
+    if (clone.cloneIndex > 20) {
+        float alertPulse = sinf(timeSec * 14.0f);
+        if (alertPulse > 0.0f) {
+            DrawTextGlitch("ANOMALIA DE MEMORIA CRITICA", 30, panelY + 76, 11, RED, 0.9f);
+        }
+        
+        int scanlineY = ((int)(timeSec * 250.0f)) % screenHeight;
+        DrawLine(0, scanlineY, screenWidth, scanlineY, Fade(hudColor, 0.4f));
+        DrawRectangle(0, scanlineY - 4, screenWidth, 8, Fade(hudColor, 0.15f));
+    } else {
+        DrawTextGlitch("INTEGRIDAD BIOLOGICA: CONECTADO", 30, panelY + 76, 11, hudColor, 0.0f);
+    }
+}
+
+void SpawnParticles(Vector3 pos, Color color, int count, bool isGas) {
     for (int k = 0; k < count; k++) {
         for (int i = 0; i < MAX_PARTICLES; i++) {
             if (!particles[i].active) {
@@ -299,6 +755,7 @@ void SpawnParticles(Vector3 pos, Color color, int count, bool isGas = false) {
                 particles[i].color = color;
                 particles[i].maxLife = particles[i].life;
                 particles[i].isGas = isGas;
+                particles[i].isAtmospheric = false;
                 particles[i].active = true;
                 break;
             }
@@ -1320,11 +1777,30 @@ int main(void) {
     Entity player = { 0 };
     Projectile projectiles[MAX_PROJECTILES] = { 0 };
     
+    // Load Mothership state
+    motherShip = LoadMothershipState("mothership.dat");
+    currentClone = LoadCloneStatus("clone.dat");
+    
+    // Load postprocessing shaders
+    Shader nebulaShader = LoadShaderFromMemory(NULL, NebulaEyeShaderSource);
+    Shader tachyonShader = LoadShaderFromMemory(NULL, TachyonBootsShaderSource);
+    
+    int abLoc = GetShaderLocation(nebulaShader, "aberrationStrength");
+    int noiseLoc = GetShaderLocation(nebulaShader, "noiseIntensity");
+    int blurLoc = GetShaderLocation(tachyonShader, "blurAmount");
+    
+    RenderTexture2D targetTex = LoadRenderTexture(1280, 720);
+    
     float gameTimer = 0.0f;
     float screenShake = 0.0f;
     GameScreen currentScreen = SCREEN_TITLE;
     
     auto ResetGame = [&]() {
+        GenerateProceduralPlanet();
+        
+        motherShip.armory.baseDamageMultiplier = 1.0f + (motherShip.armory.level - 1) * 0.225f;
+        motherShip.engineRoom.gravityStabilization = (motherShip.engineRoom.level == 1) ? 0.0f : (motherShip.engineRoom.level == 2) ? 0.15f : 0.40f;
+
         player.position = (Vector3){ 0.0f, 1.0f, 3.0f };
         player.radius = 0.5f;
         player.speed = 6.8f;
@@ -1333,15 +1809,46 @@ int main(void) {
         player.animTimer = 0.0f;
         player.animFrame = 0;
         
+        player.verticalVelocity = 0.0f;
+        player.isGrounded = true;
+        player.suitIntegrity = 100.0f;
+        player.oxygenLevel = 100.0f;
+        player.hazardTimer = 0.0f;
+        
+        // Setup initial Weapon slots
+        strcpy(player.activeWeapon.name, "Sagitario V1");
+        player.activeWeapon.baseDamage = 15.0f;
+        player.activeWeapon.baseCooldown = 0.15f;
+        
+        // Modules (Default + Equipped)
+        player.activeWeapon.projectileSlot = (ProjectileModuleData){ 0, "Default Plasma", 0.0f, 1.0f, false, false };
+        player.activeWeapon.triggerSlot = (TriggerModuleData){ 0, "Single-Fire", 1.0f, 1, 0.0f };
+        player.activeWeapon.modifierSlot = (ModifierModuleData){ 0, "None", 0.0f, false, false };
+        
+        player.activeWeapon.projectileSlot.hasBounce = motherShip.equippedBounce;
+        player.activeWeapon.modifierSlot.hasPiercing = motherShip.equippedPiercing;
+        
+        // Sinergia Agujero Negro: if bounce + piercing are both equipped, enable gravity pull!
+        player.activeWeapon.projectileSlot.hasGravityPull = (motherShip.equippedBounce && motherShip.equippedPiercing);
+        
+        motherShip.armory.hasQuantumTech = motherShip.equippedQuantum;
+        player.activeWeapon.currentCooldownTimer = 0.0f;
+        
+        // Relics status reset
+        player.relicEyeActive = false;
+        player.relicHeartActive = false;
+        player.relicBootsActive = false;
+        for (int r = 0; r < 3; r++) activeRelics[r].active = false;
+        
         // Difficulty player setup
         if (selectedDifficulty == DIFF_EASY) {
-            playerMaxHearts = 4;
-            playerHearts = 4;
-            playerHalfHeartsHealth = 8;
+            playerMaxHearts = 4 + (motherShip.greenhouse.level - 1);
+            playerHearts = playerMaxHearts;
+            playerHalfHeartsHealth = playerMaxHearts * 2;
         } else {
-            playerMaxHearts = 3;
-            playerHearts = 3;
-            playerHalfHeartsHealth = 6;
+            playerMaxHearts = 3 + (motherShip.greenhouse.level - 1);
+            playerHearts = playerMaxHearts;
+            playerHalfHeartsHealth = playerMaxHearts * 2;
         }
         
         hasCyberEye = false;
@@ -1351,6 +1858,7 @@ int main(void) {
         for (int i = 0; i < MAX_PROJECTILES; i++) projectiles[i].active = false;
         for (int i = 0; i < MAX_PARTICLES; i++) particles[i].active = false;
         for (int i = 0; i < MAX_IMPACTS; i++) impacts[i].active = false;
+        for (int i = 0; i < MAX_VORTICES; i++) activeVortices[i].active = false;
         
         GenerateProceduralDungeon();
         
@@ -1399,14 +1907,12 @@ int main(void) {
                     if (CheckCollisionPointRec(mousePos, btnNorm)) selectedDifficulty = DIFF_NORMAL;
                     if (CheckCollisionPointRec(mousePos, btnHard)) selectedDifficulty = DIFF_HARD;
                     if (CheckCollisionPointRec(mousePos, btnStart)) {
-                        currentScreen = SCREEN_INTRO;
-                        introTimer = 0.0f;
+                        currentScreen = SCREEN_NEXUS;
                     }
                 }
                 
                 if (IsKeyPressed(KEY_ENTER)) {
-                    currentScreen = SCREEN_INTRO;
-                    introTimer = 0.0f;
+                    currentScreen = SCREEN_NEXUS;
                 }
             }
             else { // SCREEN_INTRO
@@ -1417,10 +1923,263 @@ int main(void) {
                 }
             }
         }
+        else if (currentScreen == SCREEN_NEXUS) {
+            Vector2 mousePos = GetMousePosition();
+            
+            // Layout bounds for mouse buttons
+            int panelX = 40;
+            int startY = 110;
+            int btnW = 120;
+            int btnH = 30;
+            
+            Rectangle btnGreenhouse = { (float)(panelX + 270), (float)(startY + 55), (float)btnW, (float)btnH };
+            Rectangle btnArmory = { (float)(panelX + 270), (float)(startY + 165), (float)btnW, (float)btnH };
+            Rectangle btnEngine = { (float)(panelX + 270), (float)(startY + 275), (float)btnW, (float)btnH };
+            
+            int mapX = screenWidth - 440;
+            int planetStartY = 110;
+            Rectangle btnPlanets[4];
+            for (int p = 0; p < 4; p++) {
+                btnPlanets[p] = (Rectangle){ (float)(mapX + 20), (float)(planetStartY + 45 + p * 34), 360.0f, 28.0f };
+            }
+            
+            Rectangle btnLaunch = { (float)(screenWidth / 2 - 200), (float)(screenHeight - 85), 400.0f, 50.0f };
+            
+            Rectangle btnTabModules = { (float)panelX, (float)(startY - 32), 150.0f, 30.0f };
+            Rectangle btnTabWeapon = { (float)(panelX + 155), (float)(startY - 32), 150.0f, 30.0f };
+            Rectangle btnBounce = { (float)(panelX + 270), (float)(startY + 65), 120.0f, 30.0f };
+            Rectangle btnPiercing = { (float)(panelX + 270), (float)(startY + 175), 120.0f, 30.0f };
+            Rectangle btnQuantum = { (float)(panelX + 270), (float)(startY + 285), 120.0f, 30.0f };
+            
+            // Positions of interactive objects on the Bridge
+            Vector3 greenhousePos = { -4.5f, 1.0f, -2.0f };
+            Vector3 armoryPos = { 4.5f, 1.0f, -2.0f };
+            Vector3 navigationPos = { 0.0f, 1.0f, -4.5f };
+            Vector3 iaPos = { 0.0f, 1.0f, -1.0f };
+            Vector3 sciNPC_Pos = { -3.0f, 1.0f, 2.0f };
+            Vector3 soldNPC_Pos = { 3.0f, 1.0f, 2.0f };
+            
+            // Check distances
+            float distGreenhouse = Vector3Distance(player.position, greenhousePos);
+            float distArmory = Vector3Distance(player.position, armoryPos);
+            float distNavigation = Vector3Distance(player.position, navigationPos);
+            float distIA = Vector3Distance(player.position, iaPos);
+            float distSci = Vector3Distance(player.position, sciNPC_Pos);
+            float distSold = Vector3Distance(player.position, soldNPC_Pos);
+            
+            if (activeNexusOverlay == 0) {
+                // 1. WASD Player movement inside the Bridge
+                Vector3 moveVector = { 0 };
+                if (IsKeyDown(KEY_W)) moveVector.z -= 1.0f;
+                if (IsKeyDown(KEY_S)) moveVector.z += 1.0f;
+                if (IsKeyDown(KEY_A)) moveVector.x -= 1.0f;
+                if (IsKeyDown(KEY_D)) moveVector.x += 1.0f;
+                
+                if (Vector3Length(moveVector) > 0.0f) {
+                    moveVector = Vector3Normalize(moveVector);
+                    player.position = Vector3Add(player.position, Vector3Scale(moveVector, 5.2f * dt));
+                    player.state = STATE_RUN;
+                    player.animTimer += dt * 10.0f;
+                    player.animFrame = ((int)player.animTimer) % 4;
+                    player.direction = moveVector;
+                } else {
+                    player.state = STATE_IDLE;
+                    player.animFrame = 0;
+                }
+                
+                // Keep player inside boundary
+                if (player.position.x < -6.0f) player.position.x = -6.0f;
+                if (player.position.x > 6.0f) player.position.x = 6.0f;
+                if (player.position.z < -6.0f) player.position.z = -6.0f;
+                if (player.position.z > 6.0f) player.position.z = 6.0f;
+                
+                // Camera follows player on the Bridge
+                Vector3 targetCam = { player.position.x, 9.5f, player.position.z + 10.0f };
+                camera.position = Vector3Lerp(camera.position, targetCam, 5.0f * dt);
+                camera.target = Vector3Lerp(camera.target, player.position, 8.0f * dt);
+                
+                // Interaction trigger
+                if (IsKeyPressed(KEY_E)) {
+                    if (distGreenhouse < 2.0f) {
+                        activeNexusOverlay = 1;
+                        activeLeftTab = 0;
+                    } else if (distArmory < 2.0f) {
+                        activeNexusOverlay = 1;
+                        activeLeftTab = 1;
+                    } else if (distNavigation < 2.0f) {
+                        activeNexusOverlay = 2;
+                    } else if (distIA < 1.8f) {
+                        activeCrewDialogIdx = 1;
+                    } else if (distSci < 1.8f) {
+                        activeCrewDialogIdx = 2;
+                    } else if (distSold < 1.8f) {
+                        activeCrewDialogIdx = 3;
+                    }
+                }
+            } else {
+                // If menu is open, handle closing
+                if (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_E)) {
+                    activeNexusOverlay = 0;
+                }
+                
+                // Keep camera focused on console/screen while operating
+                Vector3 consoleCamTarget = player.position;
+                if (activeNexusOverlay == 1) {
+                    consoleCamTarget = (activeLeftTab == 0) ? greenhousePos : armoryPos;
+                } else if (activeNexusOverlay == 2) {
+                    consoleCamTarget = navigationPos;
+                }
+                Vector3 targetCam = { consoleCamTarget.x, 8.0f, consoleCamTarget.z + 8.5f };
+                camera.position = Vector3Lerp(camera.position, targetCam, 5.0f * dt);
+                camera.target = Vector3Lerp(camera.target, consoleCamTarget, 8.0f * dt);
+                
+                // Handle click checks
+                if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                    if (activeNexusOverlay == 1) {
+                        // Tab Selection
+                        if (CheckCollisionPointRec(mousePos, btnTabModules)) activeLeftTab = 0;
+                        if (CheckCollisionPointRec(mousePos, btnTabWeapon)) activeLeftTab = 1;
+                        
+                        if (activeLeftTab == 0) {
+                            // 1. Upgrade Greenhouse
+                            if (CheckCollisionPointRec(mousePos, btnGreenhouse)) {
+                                if (motherShip.greenhouse.level < 3) {
+                                    int cost = (motherShip.greenhouse.level == 1) ? 180 : 500;
+                                    int reqCrew = (motherShip.greenhouse.level == 1) ? 2 : 6;
+                                    if (motherShip.isotopicResources >= cost && motherShip.rescuedCrew >= reqCrew) {
+                                        motherShip.isotopicResources -= cost;
+                                        motherShip.greenhouse.level++;
+                                        SaveMothershipState(motherShip, "mothership.dat");
+                                    }
+                                }
+                            }
+                            
+                            // 2. Upgrade Armory
+                            if (CheckCollisionPointRec(mousePos, btnArmory)) {
+                                if (motherShip.armory.level < 3) {
+                                    int cost = (motherShip.armory.level == 1) ? 250 : 600;
+                                    int reqCrew = (motherShip.armory.level == 1) ? 3 : 8;
+                                    if (motherShip.isotopicResources >= cost && motherShip.rescuedCrew >= reqCrew) {
+                                        motherShip.isotopicResources -= cost;
+                                        motherShip.armory.level++;
+                                        SaveMothershipState(motherShip, "mothership.dat");
+                                    }
+                                }
+                            }
+                            
+                            // 3. Upgrade Engine Room
+                            if (CheckCollisionPointRec(mousePos, btnEngine)) {
+                                if (motherShip.engineRoom.level < 3) {
+                                    int cost = (motherShip.engineRoom.level == 1) ? 150 : 400;
+                                    int reqCrew = (motherShip.engineRoom.level == 1) ? 2 : 5;
+                                    if (motherShip.isotopicResources >= cost && motherShip.rescuedCrew >= reqCrew) {
+                                        motherShip.isotopicResources -= cost;
+                                        motherShip.engineRoom.level++;
+                                        SaveMothershipState(motherShip, "mothership.dat");
+                                    }
+                                }
+                            }
+                        }
+                        else { // activeLeftTab == 1 (Weapon Modules Customize)
+                            int maxSlots = motherShip.armory.level;
+                            int currentlyEquipped = (motherShip.equippedBounce ? 1 : 0) + 
+                                                     (motherShip.equippedPiercing ? 1 : 0) + 
+                                                     (motherShip.equippedQuantum ? 1 : 0);
+                                                     
+                            // Bounce module
+                            if (CheckCollisionPointRec(mousePos, btnBounce)) {
+                                if (!motherShip.unlockedBounce) {
+                                    if (motherShip.isotopicResources >= 100) {
+                                        motherShip.isotopicResources -= 100;
+                                        motherShip.unlockedBounce = true;
+                                        SaveMothershipState(motherShip, "mothership.dat");
+                                    }
+                                } else {
+                                    if (motherShip.equippedBounce) {
+                                        motherShip.equippedBounce = false;
+                                        SaveMothershipState(motherShip, "mothership.dat");
+                                    } else {
+                                        if (currentlyEquipped < maxSlots) {
+                                            motherShip.equippedBounce = true;
+                                            SaveMothershipState(motherShip, "mothership.dat");
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Piercing module
+                            if (CheckCollisionPointRec(mousePos, btnPiercing)) {
+                                if (!motherShip.unlockedPiercing) {
+                                    if (motherShip.isotopicResources >= 150) {
+                                        motherShip.isotopicResources -= 150;
+                                        motherShip.unlockedPiercing = true;
+                                        SaveMothershipState(motherShip, "mothership.dat");
+                                    }
+                                } else {
+                                    if (motherShip.equippedPiercing) {
+                                        motherShip.equippedPiercing = false;
+                                        SaveMothershipState(motherShip, "mothership.dat");
+                                    } else {
+                                        if (currentlyEquipped < maxSlots) {
+                                            motherShip.equippedPiercing = true;
+                                            SaveMothershipState(motherShip, "mothership.dat");
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Quantum module
+                            if (CheckCollisionPointRec(mousePos, btnQuantum)) {
+                                if (motherShip.armory.level >= 3) {
+                                    if (!motherShip.unlockedQuantum) {
+                                        if (motherShip.isotopicResources >= 250) {
+                                            motherShip.isotopicResources -= 250;
+                                            motherShip.unlockedQuantum = true;
+                                            SaveMothershipState(motherShip, "mothership.dat");
+                                        }
+                                    } else {
+                                        if (motherShip.equippedQuantum) {
+                                            motherShip.equippedQuantum = false;
+                                            SaveMothershipState(motherShip, "mothership.dat");
+                                        } else {
+                                            if (currentlyEquipped < maxSlots) {
+                                                motherShip.equippedQuantum = true;
+                                                SaveMothershipState(motherShip, "mothership.dat");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else if (activeNexusOverlay == 2) {
+                        // Select Planet
+                        for (int p = 0; p < 4; p++) {
+                            if (CheckCollisionPointRec(mousePos, btnPlanets[p])) {
+                                bool canTravel = false;
+                                if (p == 0 || p == 1) canTravel = (motherShip.engineRoom.level >= 1);
+                                else if (p == 2) canTravel = (motherShip.engineRoom.level >= 2);
+                                else if (p == 3) canTravel = (motherShip.engineRoom.level >= 3);
+                                
+                                if (canTravel) {
+                                    selectedPlanetIdx = p;
+                                }
+                            }
+                        }
+                        
+                        // Launch Sequence!
+                        if (CheckCollisionPointRec(mousePos, btnLaunch)) {
+                            activeNexusOverlay = 0;
+                            currentScreen = SCREEN_INTRO;
+                            introTimer = 0.0f;
+                        }
+                    }
+                }
+            }
+        }
         else if (currentScreen == SCREEN_GAMEOVER || currentScreen == SCREEN_VICTORY) {
-            if (IsKeyPressed(KEY_R)) {
-                ResetGame();
-                currentScreen = SCREEN_GAMEPLAY;
+            if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_R) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                currentScreen = SCREEN_NEXUS;
             }
         }
         else if (currentScreen == SCREEN_ROOM_TRANSITION) {
@@ -1443,6 +2202,60 @@ int main(void) {
         else if (currentScreen == SCREEN_GAMEPLAY) {
             gameTimer += dt;
             
+            // Spawn atmospheric particles automatically
+            if (currentPlanet.hazard != HAZARD_NONE && GetRandomValue(1, 100) < 18) {
+                Vector3 spawnPos = player.position;
+                spawnPos.x += (float)GetRandomValue(-150, 150) * 0.1f;
+                spawnPos.z += (float)GetRandomValue(-150, 150) * 0.1f;
+                
+                Color partCol = WHITE;
+                Vector3 partVel = { 0.0f, 0.0f, 0.0f };
+                float maxLife = (float)GetRandomValue(120, 280) * 0.01f;
+                
+                if (currentPlanet.hazard == HAZARD_SOLAR_STORM) {
+                    // Ash/Sparks rising
+                    spawnPos.y = 0.1f;
+                    partCol = (GetRandomValue(0, 1) == 0) ? ORANGE : RED;
+                    partVel = (Vector3){
+                        (float)GetRandomValue(-15, 15) * 0.01f,
+                        (float)GetRandomValue(10, 30) * 0.02f,
+                        (float)GetRandomValue(-15, 15) * 0.01f
+                    };
+                } else if (currentPlanet.hazard == HAZARD_TOXIC_FOG) {
+                    // Floating spores
+                    spawnPos.y = (float)GetRandomValue(5, 35) * 0.1f;
+                    partCol = LIME;
+                    partVel = (Vector3){
+                        (float)GetRandomValue(-10, 10) * 0.01f,
+                        (float)GetRandomValue(-8, 8) * 0.01f,
+                        (float)GetRandomValue(-10, 10) * 0.01f
+                    };
+                } else if (currentPlanet.hazard == HAZARD_FROZEN_WASTE) {
+                    // Snow falling
+                    spawnPos.y = 5.0f;
+                    partCol = (GetRandomValue(0, 1) == 0) ? WHITE : SKYBLUE;
+                    partVel = (Vector3){
+                        (float)GetRandomValue(-15, 15) * 0.01f,
+                        (float)GetRandomValue(-25, -12) * 0.02f,
+                        (float)GetRandomValue(-15, 15) * 0.01f
+                    };
+                }
+                
+                for (int i = 0; i < MAX_PARTICLES; i++) {
+                    if (!particles[i].active) {
+                        particles[i].position = spawnPos;
+                        particles[i].velocity = partVel;
+                        particles[i].color = partCol;
+                        particles[i].life = maxLife;
+                        particles[i].maxLife = maxLife;
+                        particles[i].isGas = false;
+                        particles[i].isAtmospheric = true;
+                        particles[i].active = true;
+                        break;
+                    }
+                }
+            }
+            
             Room &currentRoom = dungeon[currentRoomY][currentRoomX];
             
             // Check Room Cleanliness
@@ -1454,7 +2267,27 @@ int main(void) {
                 }
             }
             if (!monstersAlive) {
-                currentRoom.cleared = true;
+                if (!currentRoom.cleared) {
+                    currentRoom.cleared = true;
+                    // Passive greenhouse healing
+                    float passiveHealChance = 0.0f;
+                    if (motherShip.greenhouse.level == 2) passiveHealChance = 0.15f;
+                    else if (motherShip.greenhouse.level == 3) passiveHealChance = 0.35f;
+                    
+                    if (passiveHealChance > 0.0f && ((float)GetRandomValue(0, 100) / 100.0f) < passiveHealChance) {
+                        playerHalfHeartsHealth += 1; // heal half heart
+                        if (playerHalfHeartsHealth > playerMaxHearts * 2) {
+                            playerHalfHeartsHealth = playerMaxHearts * 2;
+                        }
+                        SpawnParticles(player.position, GREEN, 8);
+                    }
+                    
+                    // Earn resources on room clearance
+                    int isotopicEarned = GetRandomValue(5, 15);
+                    motherShip.isotopicResources += isotopicEarned;
+                    printf("Habitacion purgada: +%d Isotopos (Total: %d)\n", isotopicEarned, motherShip.isotopicResources);
+                    SaveMothershipState(motherShip, "mothership.dat");
+                }
             }
             
             // --- LOOT ITEMS PICKUP LOGIC ---
@@ -1471,7 +2304,12 @@ int main(void) {
                         
                         // Apply specific power-up passive
                         if (it.type == ITEM_HEAL) {
-                            playerHalfHeartsHealth += 2; // heal full heart
+                            int healAmt = (int)(2.0f * (motherShip.greenhouse.level == 1 ? 1.0f : motherShip.greenhouse.level == 2 ? 1.30f : 1.50f));
+                            if (activeRelics[1].active) {
+                                healAmt = (int)(healAmt * 0.5f);
+                                if (healAmt < 1) healAmt = 1;
+                            }
+                            playerHalfHeartsHealth += healAmt;
                             if (playerHalfHeartsHealth > playerMaxHearts * 2) {
                                 playerHalfHeartsHealth = playerMaxHearts * 2;
                             }
@@ -1487,12 +2325,142 @@ int main(void) {
                 }
             }
             
-            // --- WASD PLAYER CONTROLLER ---
+            // --- TESTING & UPGRADE CONTROLLER KEYS ---
+            if (IsKeyPressed(KEY_U)) {
+                motherShip.greenhouse.level = (motherShip.greenhouse.level % 3) + 1;
+                playerMaxHearts = 3 + (motherShip.greenhouse.level - 1);
+                playerHalfHeartsHealth = playerHearts * 2;
+                printf("[TEST] Invernadero nivel: %d. Corazones maximos actualizados a %d\n", motherShip.greenhouse.level, playerMaxHearts);
+                SaveMothershipState(motherShip, "mothership.dat");
+            }
+            if (IsKeyPressed(KEY_I)) {
+                motherShip.armory.level = (motherShip.armory.level % 3) + 1;
+                motherShip.armory.baseDamageMultiplier = 1.0f + (motherShip.armory.level - 1) * 0.15f;
+                printf("[TEST] Armeria nivel: %d. Multiplicador de dano a %.2f\n", motherShip.armory.level, motherShip.armory.baseDamageMultiplier);
+                SaveMothershipState(motherShip, "mothership.dat");
+            }
+            if (IsKeyPressed(KEY_O)) {
+                motherShip.engineRoom.level = (motherShip.engineRoom.level % 3) + 1;
+                motherShip.engineRoom.gravityStabilization = 1.0f - (motherShip.engineRoom.level - 1) * 0.45f;
+                printf("[TEST] Sala de Motores nivel: %d. Estabilizacion gravedad a %.2f\n", motherShip.engineRoom.level, motherShip.engineRoom.gravityStabilization);
+                SaveMothershipState(motherShip, "mothership.dat");
+            }
+            if (IsKeyPressed(KEY_ONE)) {
+                activeRelics[0].active = !activeRelics[0].active;
+                player.relicEyeActive = activeRelics[0].active;
+                printf("[TEST] Ojo de la Nebulosa relic: %s\n", activeRelics[0].active ? "ACTIVADA" : "DESACTIVADA");
+            }
+            if (IsKeyPressed(KEY_TWO)) {
+                activeRelics[1].active = !activeRelics[1].active;
+                player.relicHeartActive = activeRelics[1].active;
+                printf("[TEST] Corazon de Enjambre relic: %s\n", activeRelics[1].active ? "ACTIVADA" : "DESACTIVADA");
+            }
+            if (IsKeyPressed(KEY_THREE)) {
+                activeRelics[2].active = !activeRelics[2].active;
+                player.relicBootsActive = activeRelics[2].active;
+                printf("[TEST] Servomotores de Taquion relic: %s\n", activeRelics[2].active ? "ACTIVADA" : "DESACTIVADA");
+            }
+            if (IsKeyPressed(KEY_G)) {
+                if (player.activeWeapon.projectileSlot.hasBounce) {
+                    player.activeWeapon.projectileSlot.hasBounce = false;
+                    player.activeWeapon.modifierSlot.hasPiercing = false;
+                    player.activeWeapon.projectileSlot.hasGravityPull = false;
+                    printf("[TEST] Modulos de Arma removidos.\n");
+                } else {
+                    player.activeWeapon.projectileSlot.hasBounce = true;
+                    player.activeWeapon.modifierSlot.hasPiercing = true;
+                    player.activeWeapon.projectileSlot.hasGravityPull = true;
+                    printf("[TEST] Modulos de Arma equipados: Rebote Gravitatorio + Perforacion de Plasma (SINERGIA AGUJERO NEGRO ACTIVADA).\n");
+                }
+            }
+            if (IsKeyPressed(KEY_H)) {
+                motherShip.isotopicResources += 100;
+                printf("[TEST] +100 Recursos Isotopicos (Total: %d)\n", motherShip.isotopicResources);
+                SaveMothershipState(motherShip, "mothership.dat");
+            }
+            
+            // --- SUIT AND ATMOSPHERIC HAZARD LOGIC ---
+            if (currentPlanet.hazard != HAZARD_NONE && currentRoom.type != ROOM_START) {
+                player.hazardTimer += dt;
+                if (player.hazardTimer >= 1.0f) {
+                    player.hazardTimer = 0.0f;
+                    
+                    float drainAmount = currentPlanet.hazardIntensity * 1.5f;
+                    // Low coherence/high clones increase drainage
+                    drainAmount *= (1.0f + (currentClone.cloneIndex - 1) * 0.05f);
+                    
+                    player.suitIntegrity -= drainAmount;
+                    if (player.suitIntegrity < 0.0f) {
+                        player.suitIntegrity = 0.0f;
+                        player.oxygenLevel -= drainAmount * 1.8f;
+                        
+                        if (player.oxygenLevel <= 0.0f) {
+                            player.oxygenLevel = 0.0f;
+                            // Deal damage directly to player health (half heart at a time)
+                            playerHalfHeartsHealth -= 1;
+                            player.state = STATE_HURT;
+                            player.stateTimer = 0.15f;
+                            screenShake = 0.2f;
+                            SpawnParticles(player.position, RED, 5);
+                            if (playerHalfHeartsHealth <= 0) currentScreen = SCREEN_GAMEOVER;
+                        }
+                    }
+                }
+            }
+            
+            // Update gravity vortices
+            UpdateGravityVortices(currentRoom.enemies, currentRoom.numEnemies, dt);
+            
+            // --- WASD PLAYER CONTROLLER & GRAVITY ---
             Vector3 moveVector = { 0 };
             if (IsKeyDown(KEY_W)) moveVector.z -= 1.0f;
             if (IsKeyDown(KEY_S)) moveVector.z += 1.0f;
             if (IsKeyDown(KEY_A)) moveVector.x -= 1.0f;
             if (IsKeyDown(KEY_D)) moveVector.x += 1.0f;
+            
+            // Speed modifications based on gravity, boots, ground friction and relics
+            float baseSpeed = 6.8f;
+            if (hasThrusterBoots) baseSpeed = 9.2f;
+            
+            float relicSpeedMult = 1.0f;
+            for (int r = 0; r < 3; r++) {
+                if (activeRelics[r].active) {
+                    relicSpeedMult *= activeRelics[r].speedMultiplier;
+                }
+            }
+            
+            float gravitySpeedPenalty = 1.0f;
+            if (currentPlanet.gravityMultiplier > 1.0f) {
+                float penalty = (currentPlanet.gravityMultiplier - 1.0f) * 0.3f;
+                float stabilization = motherShip.engineRoom.gravityStabilization;
+                if (motherShip.engineRoom.level == 2) stabilization = 0.5f;
+                else if (motherShip.engineRoom.level == 3) stabilization = 0.1f;
+                penalty *= stabilization;
+                gravitySpeedPenalty = 1.0f - penalty;
+                if (gravitySpeedPenalty < 0.2f) gravitySpeedPenalty = 0.2f;
+            }
+            
+            player.speed = baseSpeed * relicSpeedMult * gravitySpeedPenalty * currentPlanet.groundFriction;
+            
+            // Jumping vertical movement (3D vertical jump)
+            float jumpForce = 9.8f / (currentPlanet.gravityMultiplier > 0.1f ? sqrtf(currentPlanet.gravityMultiplier) : 0.3f);
+            
+            if (IsKeyPressed(KEY_SPACE) && player.isGrounded) {
+                player.verticalVelocity = jumpForce;
+                player.isGrounded = false;
+            }
+            
+            if (!player.isGrounded) {
+                float gravityAccel = 9.81f * currentPlanet.gravityMultiplier;
+                player.verticalVelocity -= gravityAccel * dt;
+                player.position.y += player.verticalVelocity * dt;
+                
+                if (player.position.y <= 1.0f) {
+                    player.position.y = 1.0f;
+                    player.verticalVelocity = 0.0f;
+                    player.isGrounded = true;
+                }
+            }
             
             if (player.stateTimer > 0.0f) {
                 player.stateTimer -= dt;
@@ -1614,50 +2582,178 @@ int main(void) {
                 }
             }
             
+            // Cooldown update
+            if (player.activeWeapon.currentCooldownTimer > 0.0f) {
+                player.activeWeapon.currentCooldownTimer -= dt;
+            }
+            
+            // --- SWARM HEART DRONES ---
+            static float droneAttackTimer = 0.0f;
+            if (activeRelics[1].active) {
+                droneAttackTimer += dt;
+                if (droneAttackTimer >= 0.8f) {
+                    droneAttackTimer = 0.0f;
+                    
+                    float closestDistSq = 9999.0f;
+                    int targetEnemyIdx = -1;
+                    for (int e = 0; e < currentRoom.numEnemies; e++) {
+                        if (currentRoom.enemies[e].health > 0.0f) {
+                            float dx = currentRoom.enemies[e].position.x - player.position.x;
+                            float dz = currentRoom.enemies[e].position.z - player.position.z;
+                            float distSq = dx * dx + dz * dz;
+                            if (distSq < closestDistSq) {
+                                closestDistSq = distSq;
+                                targetEnemyIdx = e;
+                            }
+                        }
+                    }
+                    
+                    if (targetEnemyIdx != -1) {
+                        Vector3 targetPos = currentRoom.enemies[targetEnemyIdx].position;
+                        for (int i = 0; i < MAX_PROJECTILES; i++) {
+                            if (!projectiles[i].active) {
+                                projectiles[i].position = player.position;
+                                projectiles[i].position.y = 1.2f;
+                                Vector3 fireDir = Vector3Normalize(Vector3Subtract(targetPos, player.position));
+                                projectiles[i].direction = fireDir;
+                                projectiles[i].speed = 10.0f;
+                                projectiles[i].radius = 0.15f;
+                                projectiles[i].active = true;
+                                projectiles[i].isEnemy = false;
+                                projectiles[i].isAcid = false;
+                                
+                                projectiles[i].hasBounce = false;
+                                projectiles[i].hasPiercing = false;
+                                projectiles[i].hasRefraction = false;
+                                projectiles[i].pierceCount = 0;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            
             // --- SHOOT LOGIC ---
             Vector3 groundAim = GetMouseGroundIntersection(camera);
             Vector3 aimDir = Vector3Subtract(groundAim, player.position);
             aimDir.y = 0.0f;
             
-            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && player.state != STATE_HURT) {
+            if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && player.state != STATE_HURT && player.activeWeapon.currentCooldownTimer <= 0.0f) {
                 if (Vector3Length(aimDir) > 0.0f) {
                     Vector3 fireDir = Vector3Normalize(aimDir);
-                    for (int i = 0; i < MAX_PROJECTILES; i++) {
-                        if (!projectiles[i].active) {
-                            projectiles[i].position = player.position;
-                            projectiles[i].position.y = 1.0f;
-                            projectiles[i].direction = fireDir;
-                            projectiles[i].radius = hasAcidGlands ? 0.35f : 0.2f;
-                            
-                            // Cyber Eye upgrade increases projectile speed and damage
-                            projectiles[i].speed = hasCyberEye ? 25.0f : 18.0f;
-                            
-                            projectiles[i].active = true;
-                            projectiles[i].isEnemy = false;
-                            projectiles[i].isAcid = hasAcidGlands;
-                            
-                            player.state = STATE_ATTACK;
-                            
-                            // Cyber eye increases fire rate cooldown
-                            player.stateTimer = hasCyberEye ? 0.09f : 0.15f;
-                            
-                            SpawnParticles(player.position, hasAcidGlands ? LIME : SKYBLUE, 3);
-                            break;
+                    
+                    int projCount = player.activeWeapon.triggerSlot.projectilesCount;
+                    float spread = player.activeWeapon.triggerSlot.spreadAngleDegrees * DEG2RAD;
+                    
+                    for (int p = 0; p < projCount; p++) {
+                        Vector3 currentFireDir = fireDir;
+                        if (projCount > 1) {
+                            float angleOffset = -spread/2.0f + (spread / (float)(projCount - 1)) * p;
+                            float cosA = cosf(angleOffset);
+                            float sinA = sinf(angleOffset);
+                            currentFireDir.x = fireDir.x * cosA - fireDir.z * sinA;
+                            currentFireDir.z = fireDir.x * sinA + fireDir.z * cosA;
+                        }
+                        
+                        for (int i = 0; i < MAX_PROJECTILES; i++) {
+                            if (!projectiles[i].active) {
+                                projectiles[i].position = player.position;
+                                projectiles[i].position.y = 1.0f;
+                                projectiles[i].direction = currentFireDir;
+                                projectiles[i].radius = hasAcidGlands ? 0.35f : 0.2f;
+                                
+                                float baseSpeed = hasCyberEye ? 25.0f : 18.0f;
+                                projectiles[i].speed = baseSpeed * player.activeWeapon.projectileSlot.speedMultiplier;
+                                
+                                projectiles[i].active = true;
+                                projectiles[i].isEnemy = false;
+                                projectiles[i].isAcid = hasAcidGlands;
+                                
+                                projectiles[i].hasBounce = player.activeWeapon.projectileSlot.hasBounce;
+                                projectiles[i].hasPiercing = player.activeWeapon.modifierSlot.hasPiercing;
+                                projectiles[i].hasRefraction = motherShip.armory.hasQuantumTech;
+                                projectiles[i].pierceCount = player.activeWeapon.modifierSlot.hasPiercing ? 3 : 0;
+                                
+                                break;
+                            }
                         }
                     }
+                    
+                    player.state = STATE_ATTACK;
+                    
+                    float baseCooldown = hasCyberEye ? 0.09f : player.activeWeapon.baseCooldown;
+                    player.activeWeapon.currentCooldownTimer = baseCooldown * player.activeWeapon.triggerSlot.cooldownMultiplier;
+                    player.stateTimer = player.activeWeapon.currentCooldownTimer;
+                    
+                    SpawnParticles(player.position, hasAcidGlands ? LIME : SKYBLUE, 3);
                 }
             }
             
             // --- UPDATE PROJECTILES ---
             for (int i = 0; i < MAX_PROJECTILES; i++) {
                 if (projectiles[i].active) {
+                    if (!projectiles[i].isEnemy && currentPlanet.gravityMultiplier != 1.0f) {
+                        projectiles[i].position.y -= (currentPlanet.gravityMultiplier - 1.0f) * 1.5f * dt;
+                    }
+                    
                     projectiles[i].position = Vector3Add(projectiles[i].position, Vector3Scale(projectiles[i].direction, projectiles[i].speed * dt));
                     
-                    if (projectiles[i].position.x > 10.0f || projectiles[i].position.x < -10.0f ||
-                        projectiles[i].position.z > 10.0f || projectiles[i].position.z < -10.0f) {
-                        projectiles[i].active = false;
-                        SpawnImpact(projectiles[i].position);
-                        continue;
+                    bool hitWall = false;
+                    bool bounceX = false;
+                    bool bounceZ = false;
+                    
+                    if (projectiles[i].position.x > 9.8f) { hitWall = true; bounceX = true; projectiles[i].position.x = 9.8f; }
+                    else if (projectiles[i].position.x < -9.8f) { hitWall = true; bounceX = true; projectiles[i].position.x = -9.8f; }
+                    
+                    if (projectiles[i].position.z > 9.8f) { hitWall = true; bounceZ = true; projectiles[i].position.z = 9.8f; }
+                    else if (projectiles[i].position.z < -9.8f) { hitWall = true; bounceZ = true; projectiles[i].position.z = -9.8f; }
+                    
+                    if (projectiles[i].position.y < 0.1f) {
+                        hitWall = true;
+                    }
+                    
+                    if (hitWall) {
+                        if (!projectiles[i].isEnemy && projectiles[i].hasBounce) {
+                            if (bounceX) projectiles[i].direction.x = -projectiles[i].direction.x;
+                            if (bounceZ) projectiles[i].direction.z = -projectiles[i].direction.z;
+                            if (!bounceX && !bounceZ) projectiles[i].direction.y = -projectiles[i].direction.y;
+                            projectiles[i].hasBounce = false;
+                            
+                            if (projectiles[i].hasRefraction) {
+                                projectiles[i].hasRefraction = false;
+                                float angle = 25.0f * DEG2RAD;
+                                float cosA = cosf(angle);
+                                float sinA = sinf(angle);
+                                Vector3 splitDir = projectiles[i].direction;
+                                splitDir.x = projectiles[i].direction.x * cosA - projectiles[i].direction.z * sinA;
+                                splitDir.z = projectiles[i].direction.x * sinA + projectiles[i].direction.z * cosA;
+                                
+                                for (int k = 0; k < MAX_PROJECTILES; k++) {
+                                    if (!projectiles[k].active) {
+                                        projectiles[k] = projectiles[i];
+                                        projectiles[k].direction = splitDir;
+                                        projectiles[k].active = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            if (player.activeWeapon.projectileSlot.hasGravityPull && projectiles[i].hasPiercing) {
+                                SpawnGravityVortex(projectiles[i].position, 2.5f, 5.0f, 20.0f, 3.0f);
+                                SpawnParticles(projectiles[i].position, PURPLE, 15);
+                            } else {
+                                SpawnParticles(projectiles[i].position, SKYBLUE, 5);
+                            }
+                        } else {
+                            projectiles[i].active = false;
+                            SpawnImpact(projectiles[i].position);
+                            
+                            if (!projectiles[i].isEnemy && player.activeWeapon.projectileSlot.hasGravityPull && projectiles[i].hasPiercing) {
+                                SpawnGravityVortex(projectiles[i].position, 2.5f, 5.0f, 20.0f, 3.0f);
+                                SpawnParticles(projectiles[i].position, PURPLE, 15);
+                            }
+                            continue;
+                        }
                     }
                     
                     for (int p = 0; p < currentRoom.numPillars; p++) {
@@ -1666,8 +2762,27 @@ int main(void) {
                         float distSq = dx * dx + dz * dz;
                         float minDist = projectiles[i].radius + 0.8f;
                         if (distSq < minDist * minDist) {
-                            projectiles[i].active = false;
-                            SpawnImpact(projectiles[i].position);
+                            if (!projectiles[i].isEnemy && projectiles[i].hasBounce) {
+                                Vector3 normal = Vector3Normalize(Vector3Subtract(projectiles[i].position, currentRoom.pillars[p]));
+                                normal.y = 0.0f;
+                                float dot = projectiles[i].direction.x * normal.x + projectiles[i].direction.z * normal.z;
+                                projectiles[i].direction.x -= 2.0f * dot * normal.x;
+                                projectiles[i].direction.z -= 2.0f * dot * normal.z;
+                                projectiles[i].direction = Vector3Normalize(projectiles[i].direction);
+                                projectiles[i].hasBounce = false;
+                                
+                                if (player.activeWeapon.projectileSlot.hasGravityPull && projectiles[i].hasPiercing) {
+                                    SpawnGravityVortex(projectiles[i].position, 2.5f, 5.0f, 20.0f, 3.0f);
+                                    SpawnParticles(projectiles[i].position, PURPLE, 15);
+                                }
+                            } else {
+                                projectiles[i].active = false;
+                                SpawnImpact(projectiles[i].position);
+                                if (!projectiles[i].isEnemy && player.activeWeapon.projectileSlot.hasGravityPull && projectiles[i].hasPiercing) {
+                                    SpawnGravityVortex(projectiles[i].position, 2.5f, 5.0f, 20.0f, 3.0f);
+                                    SpawnParticles(projectiles[i].position, PURPLE, 15);
+                                }
+                            }
                             break;
                         }
                     }
@@ -1893,8 +3008,13 @@ int main(void) {
                             projectiles[p].active = false;
                             SpawnImpact(projectiles[p].position);
                             
-                            // Acid glands deals double damage
-                            float baseDmg = projectiles[p].isAcid ? 30.0f : 15.0f;
+                            float critMult = 1.0f;
+                            if (activeRelics[0].active && GetRandomValue(0, 100) < 35) {
+                                critMult = 2.0f;
+                                SpawnParticles(projectiles[p].position, GOLD, 12);
+                            }
+                            float armoryMult = motherShip.armory.baseDamageMultiplier;
+                            float baseDmg = (projectiles[p].isAcid ? 30.0f : 15.0f) * armoryMult * critMult;
                             enemy.health -= baseDmg;
                             
                             enemy.state = STATE_HURT;
@@ -1933,7 +3053,9 @@ int main(void) {
                         particles[i].life -= dt;
                     } else {
                         particles[i].position = Vector3Add(particles[i].position, Vector3Scale(particles[i].velocity, dt));
-                        particles[i].velocity.y -= 9.8f * dt;
+                        if (!particles[i].isAtmospheric) {
+                            particles[i].velocity.y -= 9.8f * dt;
+                        }
                         particles[i].life -= dt;
                     }
                     if (particles[i].life <= 0.0f) particles[i].active = false;
@@ -2060,11 +3182,45 @@ int main(void) {
                     if (dec.position.z > 8.8f) { dec.position.z = 8.8f; dec.velocity.z *= -1.0f; }
                 }
             }
+            
+            // Centralized player death check
+            if (playerHalfHeartsHealth <= 0) {
+                playerHalfHeartsHealth = 0;
+                currentScreen = SCREEN_GAMEOVER;
+                currentClone.cloneIndex++;
+                currentClone.memoryCoherence -= 15.0f;
+                if (currentClone.memoryCoherence < 0.0f) currentClone.memoryCoherence = 0.0f;
+                currentClone.paranoiaLevel = 100.0f - currentClone.memoryCoherence;
+                
+                motherShip.totalRunsCompleted++;
+                SaveMothershipState(motherShip, "mothership.dat");
+                SaveCloneStatus(currentClone, "clone.dat");
+            }
         }
         
         // --- DRAWING / RENDERING ---
-        BeginDrawing();
-            ClearBackground((Color){ 6, 6, 12, 255 }); // space void background
+        Shader activeShader = { 0 };
+        if (activeRelics[0].active && playerHalfHeartsHealth <= (playerMaxHearts * 2 * 0.3f)) {
+            activeShader = nebulaShader;
+            float strength = 0.007f + 0.005f * sinf(gameTimer * 10.0f);
+            float noise = 0.08f;
+            SetShaderValue(nebulaShader, abLoc, &strength, SHADER_UNIFORM_FLOAT);
+            SetShaderValue(nebulaShader, noiseLoc, &noise, SHADER_UNIFORM_FLOAT);
+        } else if (activeRelics[2].active) {
+            activeShader = tachyonShader;
+            float blur = 0.0025f + 0.001f * sinf(gameTimer * 5.0f);
+            SetShaderValue(tachyonShader, blurLoc, &blur, SHADER_UNIFORM_FLOAT);
+        }
+        
+        bool useRenderTarget = (activeShader.id > 0);
+        
+        if (useRenderTarget) {
+            BeginTextureMode(targetTex);
+        } else {
+            BeginDrawing();
+        }
+        
+        ClearBackground((Color){ 6, 6, 12, 255 }); // space void background
             
             if (currentScreen == SCREEN_TITLE) {
                 // 1. Draw Starfield background in 3D
@@ -2165,6 +3321,575 @@ int main(void) {
                 int slW = MeasureText(startLabel, slSize);
                 DrawText(startLabel, btnStart.x + btnStart.width / 2 - slW / 2, btnStart.y + btnStart.height / 2 - slSize / 2, slSize, startBtnCol);
             }
+            else if (currentScreen == SCREEN_NEXUS) {
+                // Positions of interactive objects on the Bridge
+                Vector3 greenhousePos = { -4.5f, 1.0f, -2.0f };
+                Vector3 armoryPos = { 4.5f, 1.0f, -2.0f };
+                Vector3 navigationPos = { 0.0f, 1.0f, -4.5f };
+                Vector3 iaPos = { 0.0f, 1.0f, -1.0f };
+                Vector3 sciNPC_Pos = { -3.0f, 1.0f, 2.0f };
+                Vector3 soldNPC_Pos = { 3.0f, 1.0f, 2.0f };
+                
+                float distGreenhouse = Vector3Distance(player.position, greenhousePos);
+                float distArmory = Vector3Distance(player.position, armoryPos);
+                float distNavigation = Vector3Distance(player.position, navigationPos);
+                float distIA = Vector3Distance(player.position, iaPos);
+                float distSci = Vector3Distance(player.position, sciNPC_Pos);
+                float distSold = Vector3Distance(player.position, soldNPC_Pos);
+
+                // 1. Draw 3D Spaceship Bridge Environment
+                BeginMode3D(camera);
+                    // A. Parallax space stars background
+                    for (int i = 0; i < MAX_STARS; i++) {
+                        float driftX = spaceStars[i].position.x - camera.position.x * spaceStars[i].parallaxFactor;
+                        float driftZ = spaceStars[i].position.z - camera.position.z * spaceStars[i].parallaxFactor;
+                        Vector3 starPos = { driftX, spaceStars[i].position.y, driftZ };
+                        DrawBillboardRec(camera, charSpritesheet, (Rectangle){ 96.0f, 192.0f, 32.0f, 32.0f }, starPos, (Vector2){ spaceStars[i].size, spaceStars[i].size }, spaceStars[i].color);
+                    }
+                    
+                    // B. Spaceship cockpit floor grid (metallic grey compartments)
+                    for (int z = -6; z <= 6; z++) {
+                        for (int x = -6; x <= 6; x++) {
+                            Rectangle floorSrc = { 0.0f, 2.0f * 32.0f, 32.0f, 32.0f };
+                            DrawFloorTile(envSpritesheet, floorSrc, (Vector3){ (float)x, 0.0f, (float)z }, (Vector2){ 1.0f, 1.0f }, (Color){ 70, 75, 80, 255 });
+                        }
+                    }
+                    
+                    // C. Walls surrounding the bridge room
+                    for (int x = -7; x <= 7; x++) {
+                        Rectangle wallSrc = { 0.0f, 0.0f, 32.0f, 32.0f };
+                        // Back wall (cockpit viewport)
+                        if (x == -7 || x == 7) {
+                            DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ (float)x, 2.0f, -7.0f }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 45, 50, 55, 255 });
+                        } else {
+                            // low border under front viewport window
+                            DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ (float)x, 0.5f, -7.0f }, (Vector3){ 1.0f, 1.0f, 1.0f }, (Color){ 55, 60, 65, 255 });
+                        }
+                        // Front entrance wall
+                        DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ (float)x, 2.0f, 7.0f }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 50, 55, 60, 255 });
+                    }
+                    // Left and right walls
+                    for (int z = -6; z <= 6; z++) {
+                        Rectangle wallSrc = { 0.0f, 0.0f, 32.0f, 32.0f };
+                        DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ -7.0f, 2.0f, (float)z }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 50, 55, 60, 255 });
+                        DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ 7.0f, 2.0f, (float)z }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 50, 55, 60, 255 });
+                    }
+                    
+                    // D. Interactive 3D modules
+                    // Greenhouse Cylinder (Green)
+                    DrawCylinder((Vector3){ -4.5f, 0.8f, -2.0f }, 0.6f, 0.6f, 1.6f, 16, Fade(GREEN, 0.25f));
+                    DrawCylinderWires((Vector3){ -4.5f, 0.8f, -2.0f }, 0.6f, 0.6f, 1.6f, 16, GREEN);
+                    if (GetRandomValue(0, 100) < 6) {
+                        SpawnParticles((Vector3){ -4.5f + (float)GetRandomValue(-2, 2) * 0.1f, 0.2f, -2.0f + (float)GetRandomValue(-2, 2) * 0.1f }, GREEN, 1);
+                    }
+                    
+                    // Armory Module Cylinder (Red)
+                    DrawCylinder((Vector3){ 4.5f, 0.8f, -2.0f }, 0.6f, 0.6f, 1.6f, 16, Fade(RED, 0.25f));
+                    DrawCylinderWires((Vector3){ 4.5f, 0.8f, -2.0f }, 0.6f, 0.6f, 1.6f, 16, RED);
+                    if (GetRandomValue(0, 100) < 6) {
+                        SpawnParticles((Vector3){ 4.5f + (float)GetRandomValue(-2, 2) * 0.1f, 0.2f, -2.0f + (float)GetRandomValue(-2, 2) * 0.1f }, ORANGE, 1);
+                    }
+                    
+                    // Navigation Console Projector (Cyan)
+                    DrawCylinder((Vector3){ 0.0f, 0.5f, -4.5f }, 0.8f, 0.8f, 1.0f, 16, Fade(CYAN, 0.3f));
+                    DrawCylinderWires((Vector3){ 0.0f, 0.5f, -4.5f }, 0.8f, 0.8f, 1.0f, 16, CYAN);
+                    DrawSphere((Vector3){ 0.0f, 1.2f, -4.5f }, 0.22f, Fade(CYAN, 0.8f));
+                    
+                    // IA Holographic Projector
+                    DrawCylinder((Vector3){ 0.0f, 0.2f, -1.0f }, 0.4f, 0.4f, 0.4f, 16, Fade(DARKGRAY, 0.8f));
+                    DrawSphere((Vector3){ 0.0f, 0.9f, -1.0f }, 0.15f + sinf((float)GetTime() * 4.0f) * 0.03f, Fade(CYAN, 0.9f));
+                    
+                    // E. Draw NPC Billboards
+                    // Scientist (Row 3, Column 0)
+                    Rectangle sciSrc = { 0.0f, 3.0f * 32.0f, 32.0f, 32.0f };
+                    DrawBillboardRec(camera, charSpritesheet, sciSrc, (Vector3){ sciNPC_Pos.x, sciNPC_Pos.y - 0.2f, sciNPC_Pos.z }, (Vector2){ 1.8f, 1.8f }, WHITE);
+                    
+                    // Soldier (Row 4, Column 0)
+                    Rectangle soldSrc = { 0.0f, 4.0f * 32.0f, 32.0f, 32.0f };
+                    DrawBillboardRec(camera, charSpritesheet, soldSrc, (Vector3){ soldNPC_Pos.x, soldNPC_Pos.y - 0.2f, soldNPC_Pos.z }, (Vector2){ 1.8f, 1.8f }, WHITE);
+                    
+                    // F. Draw Player Clone Avatar
+                    if (player.health > 0.0f || playerHalfHeartsHealth > 0) {
+                        Color pColor = WHITE;
+                        // Legs
+                        int legRow = (player.direction.z < 0.0f) ? 2 : 1;
+                        Rectangle legSrc = { (float)player.animFrame * 32.0f, (float)legRow * 32.0f, 32.0f, 32.0f };
+                        Vector3 legPos = { player.position.x, player.position.y - 0.2f, player.position.z };
+                        DrawBillboardRec(camera, charSpritesheet, legSrc, legPos, (Vector2){ 1.8f, 1.8f }, pColor);
+                        
+                        // Head
+                        int headState = HEAD_LOOK_DOWN;
+                        bool flipHead = (player.direction.x > 0.0f);
+                        if (player.direction.z < -0.5f) {
+                            headState = HEAD_LOOK_UP;
+                        } else if (fabsf(player.direction.x) > 0.5f) {
+                            headState = HEAD_LOOK_LEFT;
+                        } else {
+                            headState = HEAD_LOOK_DOWN;
+                        }
+                        Rectangle headSrc = { 
+                            (float)headState * 32.0f, 
+                            0.0f, 
+                            flipHead ? -32.0f : 32.0f,
+                            32.0f 
+                        };
+                        Vector3 headPos = { player.position.x, player.position.y + 0.6f, player.position.z };
+                        DrawBillboardRec(camera, charSpritesheet, headSrc, headPos, (Vector2){ 1.8f, 1.8f }, pColor);
+                    }
+                    
+                    // G. Draw Sparks Particles inside cockpit
+                    for (int i = 0; i < MAX_PARTICLES; i++) {
+                        if (particles[i].active && !particles[i].isGas) {
+                            float alpha = particles[i].life / particles[i].maxLife;
+                            DrawBillboardRec(camera, charSpritesheet, (Rectangle){ 128.0f, 192.0f, 32.0f, 32.0f }, particles[i].position, (Vector2){ 0.35f, 0.35f }, Fade(particles[i].color, alpha));
+                        }
+                    }
+                EndMode3D();
+
+                // Auto-close dialogue when walking away
+                if (activeCrewDialogIdx == 1 && distIA > 2.2f) activeCrewDialogIdx = 0;
+                if (activeCrewDialogIdx == 2 && distSci > 2.2f) activeCrewDialogIdx = 0;
+                if (activeCrewDialogIdx == 3 && distSold > 2.2f) activeCrewDialogIdx = 0;
+
+                // 2D Interactive prompts when walking around (activeNexusOverlay == 0)
+                if (activeNexusOverlay == 0) {
+                    if (distGreenhouse < 2.0f) {
+                        Vector2 sPos = GetWorldToScreen((Vector3){ greenhousePos.x, greenhousePos.y + 1.2f, greenhousePos.z }, camera);
+                        DrawRectangle(sPos.x - 90, sPos.y - 12, 180, 24, Fade(BLACK, 0.8f));
+                        DrawRectangleLines(sPos.x - 90, sPos.y - 12, 180, 24, GREEN);
+                        DrawText("[E] TERMINAL INVERNADERO", sPos.x - 80, sPos.y - 6, 11, GREEN);
+                    }
+                    else if (distArmory < 2.0f) {
+                        Vector2 sPos = GetWorldToScreen((Vector3){ armoryPos.x, armoryPos.y + 1.2f, armoryPos.z }, camera);
+                        DrawRectangle(sPos.x - 95, sPos.y - 12, 190, 24, Fade(BLACK, 0.8f));
+                        DrawRectangleLines(sPos.x - 95, sPos.y - 12, 190, 24, RED);
+                        DrawText("[E] CONTROL DE ARMAS Y MODS", sPos.x - 90, sPos.y - 6, 11, RED);
+                    }
+                    else if (distNavigation < 2.0f) {
+                        Vector2 sPos = GetWorldToScreen((Vector3){ navigationPos.x, navigationPos.y + 1.2f, navigationPos.z }, camera);
+                        DrawRectangle(sPos.x - 90, sPos.y - 12, 180, 24, Fade(BLACK, 0.8f));
+                        DrawRectangleLines(sPos.x - 90, sPos.y - 12, 180, 24, CYAN);
+                        DrawText("[E] CONSOLA DE NAVEGACION", sPos.x - 80, sPos.y - 6, 11, CYAN);
+                    }
+                    else if (distIA < 1.8f) {
+                        Vector2 sPos = GetWorldToScreen((Vector3){ iaPos.x, iaPos.y + 0.8f, iaPos.z }, camera);
+                        DrawRectangle(sPos.x - 80, sPos.y - 12, 160, 24, Fade(BLACK, 0.8f));
+                        DrawRectangleLines(sPos.x - 80, sPos.y - 12, 160, 24, CYAN);
+                        DrawText("[E] CONVERSAR CON IA", sPos.x - 70, sPos.y - 6, 11, CYAN);
+                    }
+                    else if (distSci < 1.8f) {
+                        Vector2 sPos = GetWorldToScreen((Vector3){ sciNPC_Pos.x, sciNPC_Pos.y + 1.0f, sciNPC_Pos.z }, camera);
+                        DrawRectangle(sPos.x - 85, sPos.y - 12, 170, 24, Fade(BLACK, 0.8f));
+                        DrawRectangleLines(sPos.x - 85, sPos.y - 12, 170, 24, LIME);
+                        DrawText("[E] CIENCIA Y BIOMASA", sPos.x - 75, sPos.y - 6, 11, LIME);
+                    }
+                    else if (distSold < 1.8f) {
+                        Vector2 sPos = GetWorldToScreen((Vector3){ soldNPC_Pos.x, soldNPC_Pos.y + 1.0f, soldNPC_Pos.z }, camera);
+                        DrawRectangle(sPos.x - 85, sPos.y - 12, 170, 24, Fade(BLACK, 0.8f));
+                        DrawRectangleLines(sPos.x - 85, sPos.y - 12, 170, 24, PINK);
+                        DrawText("[E] REPORTAR CON SOLDADO", sPos.x - 75, sPos.y - 6, 11, PINK);
+                    }
+                }
+                
+                // Top Header HUD bar
+                DrawRectangle(0, 0, screenWidth, 75, Fade(DARKGRAY, 0.4f));
+                DrawLine(0, 75, screenWidth, 75, CYAN);
+                
+                char headerTitle[] = "NAVE NODRIZA USG DEHUMANIZER - COCKPIT DE COMANDO";
+                DrawTextGlitch(headerTitle, 30, 24, 20, CYAN, 0.05f);
+                
+                // Resources on top right
+                char resText[256];
+                sprintf(resText, "ISOTOPOS: %d | TRIPULANTES: %d | OPERADOR CLON: #%03d (COHERENCIA: %.1f%%)", 
+                        motherShip.isotopicResources, motherShip.rescuedCrew, currentClone.cloneIndex, currentClone.memoryCoherence);
+                int resW = MeasureText(resText, 14);
+                DrawText(resText, screenWidth - resW - 30, 28, 14, GREEN);
+                
+                Vector2 mousePos = GetMousePosition();
+                
+                // ==================== LEFT PANEL: UPGRADES ====================
+                if (activeNexusOverlay == 1) {
+                    // Darken background overlay
+                    DrawRectangle(0, 75, screenWidth, screenHeight - 75, Fade(BLACK, 0.5f));
+                    
+                    int panelX = 40;
+                    int startY = 110;
+                    int panelW = 410;
+                    
+                    // Draw Tabs
+                    Rectangle btnTabModules = { (float)panelX, (float)(startY - 32), 150.0f, 30.0f };
+                    Rectangle btnTabWeapon = { (float)(panelX + 155), (float)(startY - 32), 150.0f, 30.0f };
+                    
+                    bool modulesTabHover = CheckCollisionPointRec(mousePos, btnTabModules);
+                    bool weaponTabHover = CheckCollisionPointRec(mousePos, btnTabWeapon);
+                    
+                    // Modules Tab
+                    DrawRectangleRec(btnTabModules, activeLeftTab == 0 ? Fade(CYAN, 0.2f) : (modulesTabHover ? Fade(CYAN, 0.05f) : BLANK));
+                    DrawRectangleLinesEx(btnTabModules, activeLeftTab == 0 ? 2 : 1, activeLeftTab == 0 ? CYAN : GRAY);
+                    DrawText("MODULOS NAVE", btnTabModules.x + 25, btnTabModules.y + 8, 13, activeLeftTab == 0 ? CYAN : RAYWHITE);
+                    
+                    // Weapon Tab
+                    DrawRectangleRec(btnTabWeapon, activeLeftTab == 1 ? Fade(CYAN, 0.2f) : (weaponTabHover ? Fade(CYAN, 0.05f) : BLANK));
+                    DrawRectangleLinesEx(btnTabWeapon, activeLeftTab == 1 ? 2 : 1, activeLeftTab == 1 ? CYAN : GRAY);
+                    DrawText("ARMAMENTO Y MODS", btnTabWeapon.x + 15, btnTabWeapon.y + 8, 13, activeLeftTab == 1 ? CYAN : RAYWHITE);
+                    
+                    DrawRectangle(panelX, startY, panelW, 430, Fade(BLACK, 0.8f));
+                    DrawRectangleLines(panelX, startY, panelW, 430, Fade(CYAN, 0.6f));
+                    
+                    if (activeLeftTab == 0) {
+                        DrawText("MODULOS DE LA NAVE NODRIZA", panelX + 20, startY + 15, 18, GOLD);
+                        DrawLine(panelX + 20, startY + 40, panelX + panelW - 20, startY + 40, Fade(CYAN, 0.3f));
+                        
+                        // Greenhouse Upgrade Row (Y: startY + 55)
+                        {
+                            int rowY = startY + 55;
+                            char label[64];
+                            sprintf(label, "INVERNADERO HIDROPONICO (Lvl %d/3)", motherShip.greenhouse.level);
+                            DrawText(label, panelX + 20, rowY, 14, RAYWHITE);
+                            
+                            if (motherShip.greenhouse.level < 3) {
+                                int cost = (motherShip.greenhouse.level == 1) ? 180 : 500;
+                                int reqCrew = (motherShip.greenhouse.level == 1) ? 2 : 6;
+                                
+                                char costTxt[128];
+                                sprintf(costTxt, "Coste: %d Isot. / %d Trip.", cost, reqCrew);
+                                DrawText(costTxt, panelX + 20, rowY + 18, 11, GRAY);
+                                DrawText("Efecto: Aumenta max corazones y curacion.", panelX + 20, rowY + 32, 11, LIME);
+                                
+                                // Upgrade Button
+                                Rectangle btn = { (float)(panelX + 270), (float)(rowY + 10), 120.0f, 30.0f };
+                                bool hover = CheckCollisionPointRec(mousePos, btn);
+                                bool canAfford = (motherShip.isotopicResources >= cost && motherShip.rescuedCrew >= reqCrew);
+                                
+                                Color btnCol = canAfford ? (hover ? GREEN : Fade(GREEN, 0.8f)) : GRAY;
+                                DrawRectangleRec(btn, hover && canAfford ? Fade(GREEN, 0.2f) : BLANK);
+                                DrawRectangleLinesEx(btn, hover ? 2 : 1, btnCol);
+                                DrawText("MEJORAR", btn.x + 30, btn.y + 8, 13, btnCol);
+                            } else {
+                                DrawText("Efecto: Aumenta max corazones y curacion.", panelX + 20, rowY + 18, 11, LIME);
+                                DrawText("NIVEL MAXIMO ALCANZADO", panelX + 20, rowY + 32, 12, GOLD);
+                            }
+                        }
+                        
+                        // Armory Upgrade Row (Y: startY + 165)
+                        {
+                            int rowY = startY + 165;
+                            char label[64];
+                            sprintf(label, "ARMERIA CRISTALINA (Lvl %d/3)", motherShip.armory.level);
+                            DrawText(label, panelX + 20, rowY, 14, RAYWHITE);
+                            
+                            if (motherShip.armory.level < 3) {
+                                int cost = (motherShip.armory.level == 1) ? 250 : 600;
+                                int reqCrew = (motherShip.armory.level == 1) ? 3 : 8;
+                                
+                                char costTxt[128];
+                                sprintf(costTxt, "Coste: %d Isot. / %d Trip.", cost, reqCrew);
+                                DrawText(costTxt, panelX + 20, rowY + 18, 11, GRAY);
+                                DrawText("Efecto: Incrementa dano base del arma.", panelX + 20, rowY + 32, 11, LIME);
+                                
+                                // Upgrade Button
+                                Rectangle btn = { (float)(panelX + 270), (float)(rowY + 10), 120.0f, 30.0f };
+                                bool hover = CheckCollisionPointRec(mousePos, btn);
+                                bool canAfford = (motherShip.isotopicResources >= cost && motherShip.rescuedCrew >= reqCrew);
+                                
+                                Color btnCol = canAfford ? (hover ? GREEN : Fade(GREEN, 0.8f)) : GRAY;
+                                DrawRectangleRec(btn, hover && canAfford ? Fade(GREEN, 0.2f) : BLANK);
+                                DrawRectangleLinesEx(btn, hover ? 2 : 1, btnCol);
+                                DrawText("MEJORAR", btn.x + 30, btn.y + 8, 13, btnCol);
+                            } else {
+                                DrawText("Efecto: Incrementa dano base del arma.", panelX + 20, rowY + 18, 11, LIME);
+                                DrawText("NIVEL MAXIMO ALCANZADO", panelX + 20, rowY + 32, 12, GOLD);
+                            }
+                        }
+                        
+                        // Engine Room Upgrade Row (Y: startY + 275)
+                        {
+                            int rowY = startY + 275;
+                            char label[64];
+                            sprintf(label, "SALA DE MOTORES HYPER-G (Lvl %d/3)", motherShip.engineRoom.level);
+                            DrawText(label, panelX + 20, rowY, 14, RAYWHITE);
+                            
+                            if (motherShip.engineRoom.level < 3) {
+                                int cost = (motherShip.engineRoom.level == 1) ? 150 : 400;
+                                int reqCrew = (motherShip.engineRoom.level == 1) ? 2 : 5;
+                                
+                                char costTxt[128];
+                                sprintf(costTxt, "Coste: %d Isot. / %d Trip.", cost, reqCrew);
+                                DrawText(costTxt, panelX + 20, rowY + 18, 11, GRAY);
+                                DrawText("Efecto: Neutraliza la gravedad de planetas.", panelX + 20, rowY + 32, 11, LIME);
+                                
+                                // Upgrade Button
+                                Rectangle btn = { (float)(panelX + 270), (float)(rowY + 10), 120.0f, 30.0f };
+                                bool hover = CheckCollisionPointRec(mousePos, btn);
+                                bool canAfford = (motherShip.isotopicResources >= cost && motherShip.rescuedCrew >= reqCrew);
+                                
+                                Color btnCol = canAfford ? (hover ? GREEN : Fade(GREEN, 0.8f)) : GRAY;
+                                DrawRectangleRec(btn, hover && canAfford ? Fade(GREEN, 0.2f) : BLANK);
+                                DrawRectangleLinesEx(btn, hover ? 2 : 1, btnCol);
+                                DrawText("MEJORAR", btn.x + 30, btn.y + 8, 13, btnCol);
+                            } else {
+                                DrawText("Efecto: Neutraliza la gravedad de planetas.", panelX + 20, rowY + 18, 11, LIME);
+                                DrawText("NIVEL MAXIMO ALCANZADO", panelX + 20, rowY + 32, 12, GOLD);
+                            }
+                        }
+                        
+                        // Help text at bottom of left panel
+                        DrawText("Consigue Isotopos matando enemigos y rescatando", panelX + 20, startY + 375, 11, GRAY);
+                        DrawText("tripulantes en el nucleo del Reactor Final (Jefe).", panelX + 20, startY + 390, 11, GRAY);
+                    }
+                    else {
+                        DrawText("SISTEMA DE MODULOS DE ARMA", panelX + 20, startY + 15, 18, GOLD);
+                        DrawLine(panelX + 20, startY + 40, panelX + panelW - 20, startY + 40, Fade(CYAN, 0.3f));
+                        
+                        int maxSlots = motherShip.armory.level;
+                        int currentlyEquipped = (motherShip.equippedBounce ? 1 : 0) + 
+                                                 (motherShip.equippedPiercing ? 1 : 0) + 
+                                                 (motherShip.equippedQuantum ? 1 : 0);
+                                                 
+                        char slotsStr[128];
+                        sprintf(slotsStr, "Ranuras Activas: %d / %d (Aumenta con Armeria Lvl)", currentlyEquipped, maxSlots);
+                        DrawText(slotsStr, panelX + 20, startY + 46, 12, CYAN);
+                        
+                        // Bounce Mod Row (startY + 65)
+                        {
+                            int rowY = startY + 65;
+                            DrawText("REBOTE GRAVITATORIO", panelX + 20, rowY, 14, RAYWHITE);
+                            DrawText("Los proyectiles rebotan en las paredes.", panelX + 20, rowY + 18, 11, GRAY);
+                            
+                            Rectangle btn = { (float)(panelX + 270), (float)(rowY + 5), 120.0f, 30.0f };
+                            bool hover = CheckCollisionPointRec(mousePos, btn);
+                            
+                            if (!motherShip.unlockedBounce) {
+                                bool canAfford = motherShip.isotopicResources >= 100;
+                                Color btnCol = canAfford ? (hover ? GREEN : Fade(GREEN, 0.8f)) : GRAY;
+                                DrawRectangleRec(btn, hover && canAfford ? Fade(GREEN, 0.2f) : BLANK);
+                                DrawRectangleLinesEx(btn, hover ? 2 : 1, btnCol);
+                                DrawText("DESBLOQ (100)", btn.x + 12, btn.y + 8, 12, btnCol);
+                            } else {
+                                Color btnCol = motherShip.equippedBounce ? CYAN : GRAY;
+                                if (hover) btnCol = RAYWHITE;
+                                DrawRectangleRec(btn, motherShip.equippedBounce ? Fade(CYAN, 0.2f) : (hover ? Fade(GRAY, 0.1f) : BLANK));
+                                DrawRectangleLinesEx(btn, hover ? 2 : 1, btnCol);
+                                DrawText(motherShip.equippedBounce ? "EQUIPADO" : "EQUIPAR", btn.x + 28, btn.y + 8, 12, btnCol);
+                            }
+                        }
+                        
+                        // Piercing Mod Row (startY + 175)
+                        {
+                            int rowY = startY + 175;
+                            DrawText("PERFORACION DE PLASMA", panelX + 20, rowY, 14, RAYWHITE);
+                            DrawText("Proyectiles atraviesan hasta 3 enemigos.", panelX + 20, rowY + 18, 11, GRAY);
+                            
+                            Rectangle btn = { (float)(panelX + 270), (float)(rowY + 5), 120.0f, 30.0f };
+                            bool hover = CheckCollisionPointRec(mousePos, btn);
+                            
+                            if (!motherShip.unlockedPiercing) {
+                                bool canAfford = motherShip.isotopicResources >= 150;
+                                Color btnCol = canAfford ? (hover ? GREEN : Fade(GREEN, 0.8f)) : GRAY;
+                                DrawRectangleRec(btn, hover && canAfford ? Fade(GREEN, 0.2f) : BLANK);
+                                DrawRectangleLinesEx(btn, hover ? 2 : 1, btnCol);
+                                DrawText("DESBLOQ (150)", btn.x + 12, btn.y + 8, 12, btnCol);
+                            } else {
+                                Color btnCol = motherShip.equippedPiercing ? CYAN : GRAY;
+                                if (hover) btnCol = RAYWHITE;
+                                DrawRectangleRec(btn, motherShip.equippedPiercing ? Fade(CYAN, 0.2f) : (hover ? Fade(GRAY, 0.1f) : BLANK));
+                                DrawRectangleLinesEx(btn, hover ? 2 : 1, btnCol);
+                                DrawText(motherShip.equippedPiercing ? "EQUIPADO" : "EQUIPAR", btn.x + 28, btn.y + 8, 12, btnCol);
+                            }
+                        }
+                        
+                        // Quantum Mod Row (startY + 285)
+                        {
+                            int rowY = startY + 285;
+                            DrawText("REFRACCION CUANTICA", panelX + 20, rowY, 14, RAYWHITE);
+                            DrawText("Divide proyectiles en dos al impactar.", panelX + 20, rowY + 18, 11, GRAY);
+                            
+                            Rectangle btn = { (float)(panelX + 270), (float)(rowY + 5), 120.0f, 30.0f };
+                            bool hover = CheckCollisionPointRec(mousePos, btn);
+                            
+                            if (motherShip.armory.level < 3) {
+                                DrawRectangleLinesEx(btn, 1, DARKGRAY);
+                                DrawText("BLOQUEADO", btn.x + 24, btn.y + 8, 12, RED);
+                                DrawText("Requiere Armeria Lvl 3", panelX + 20, rowY + 34, 11, RED);
+                            } else if (!motherShip.unlockedQuantum) {
+                                bool canAfford = motherShip.isotopicResources >= 250;
+                                Color btnCol = canAfford ? (hover ? GREEN : Fade(GREEN, 0.8f)) : GRAY;
+                                DrawRectangleRec(btn, hover && canAfford ? Fade(GREEN, 0.2f) : BLANK);
+                                DrawRectangleLinesEx(btn, hover ? 2 : 1, btnCol);
+                                DrawText("DESBLOQ (250)", btn.x + 12, btn.y + 8, 12, btnCol);
+                            } else {
+                                Color btnCol = motherShip.equippedQuantum ? CYAN : GRAY;
+                                if (hover) btnCol = RAYWHITE;
+                                DrawRectangleRec(btn, motherShip.equippedQuantum ? Fade(CYAN, 0.2f) : (hover ? Fade(GRAY, 0.1f) : BLANK));
+                                DrawRectangleLinesEx(btn, hover ? 2 : 1, btnCol);
+                                DrawText(motherShip.equippedQuantum ? "EQUIPADO" : "EQUIPAR", btn.x + 28, btn.y + 8, 12, btnCol);
+                            }
+                        }
+                        
+                        // Double check synergy warning at bottom
+                        if (motherShip.equippedBounce && motherShip.equippedPiercing) {
+                            DrawText("SINERGIA: AGUJERO NEGRO ACTIVA (Bounce + Pierce)", panelX + 20, startY + 375, 11, GOLD);
+                            DrawText("Muros crean vortices de atraccion de plasma.", panelX + 20, startY + 390, 11, GOLD);
+                        } else {
+                            DrawText("Combina Rebote + Perforacion para Sinergia", panelX + 20, startY + 375, 11, GRAY);
+                            DrawText("de Atraccion de Agujeros Negros de Plasma.", panelX + 20, startY + 390, 11, GRAY);
+                        }
+                    }
+                    
+                    // Notice to close terminal
+                    DrawText("PULSA [ESC] O [E] PARA SALIR DE LA TERMINAL", panelX + 20, startY + 413, 11, GRAY);
+                }
+                
+                // ==================== RIGHT PANEL: PLANETS ====================
+                else if (activeNexusOverlay == 2) {
+                    // Darken background overlay
+                    DrawRectangle(0, 75, screenWidth, screenHeight - 75, Fade(BLACK, 0.5f));
+                    
+                    int mapX = screenWidth / 2 - 200;
+                    int rightPanelW = 400;
+                    int planetStartY = 110;
+                    
+                    // Destination Panel
+                    DrawRectangle(mapX, planetStartY, rightPanelW, 230, Fade(BLACK, 0.8f));
+                    DrawRectangleLines(mapX, planetStartY, rightPanelW, 230, Fade(CYAN, 0.6f));
+                    DrawText("SELECCIONAR PLANETA DE DESTINO", mapX + 20, planetStartY + 15, 15, GOLD);
+                    DrawLine(mapX + 20, planetStartY + 35, mapX + rightPanelW - 20, planetStartY + 35, Fade(CYAN, 0.3f));
+                    
+                    const char *planetNames[4] = { "AETHER (Rango: 4.8 LY)", "SOLARIS-IX (Rango: 5.0 LY)", "ZUL-GHAR (Rango: 11.5 LY)", "CYON-IV (Rango: 28.2 LY)" };
+                    const char *planetSpecs[4] = {
+                        "AETHER: Gravedad 1.0G. Atmosfera segura. Traccion estable.",
+                        "SOLARIS: Gravedad 1.2G. Tormentas solares severas (drena escudo).",
+                        "ZUL-GHAR: Gravedad 0.9G. Niebla acida corrosiva (danio directo).",
+                        "CYON-IV: Gravedad 0.6G. Frio extremo (lentitud constante)."
+                    };
+                    
+                    for (int p = 0; p < 4; p++) {
+                        Rectangle btn = { (float)(mapX + 20), (float)(planetStartY + 45 + p * 34), 360.0f, 28.0f };
+                        bool hover = CheckCollisionPointRec(mousePos, btn);
+                        
+                        bool unlocked = false;
+                        if (p == 0 || p == 1) unlocked = (motherShip.engineRoom.level >= 1);
+                        else if (p == 2) unlocked = (motherShip.engineRoom.level >= 2);
+                        else if (p == 3) unlocked = (motherShip.engineRoom.level >= 3);
+                        
+                        Color txtCol = unlocked ? (p == selectedPlanetIdx ? CYAN : GRAY) : DARKGRAY;
+                        if (hover && unlocked) txtCol = RAYWHITE;
+                        
+                        DrawRectangleRec(btn, p == selectedPlanetIdx ? Fade(CYAN, 0.15f) : (hover && unlocked ? Fade(CYAN, 0.05f) : BLANK));
+                        DrawRectangleLinesEx(btn, p == selectedPlanetIdx ? 2 : 1, p == selectedPlanetIdx ? CYAN : Fade(txtCol, 0.4f));
+                        
+                        DrawText(planetNames[p], btn.x + 15, btn.y + 7, 13, txtCol);
+                        if (!unlocked) {
+                            DrawText("BLOQUEADO (Motor Lvl requerido)", btn.x + 180, btn.y + 7, 10, RED);
+                        }
+                    }
+                    
+                    // Show specifications of the selected planet
+                    DrawText(planetSpecs[selectedPlanetIdx], mapX + 20, planetStartY + 195, 11, CYAN);
+                    
+                    // ==================== CENTER BOTTOM: LAUNCH BUTTON ====================
+                    Rectangle btnLaunch = { (float)(screenWidth / 2 - 200), (float)(screenHeight - 165), 400.0f, 50.0f };
+                    bool launchHover = CheckCollisionPointRec(mousePos, btnLaunch);
+                    
+                    float launchPulse = sinf((float)GetTime() * 6.0f) * 0.4f + 0.6f;
+                    Color launchBtnCol = launchHover ? GOLD : Fade(CYAN, launchPulse);
+                    DrawRectangleRec(btnLaunch, launchHover ? Fade(CYAN, 0.2f) : Fade(CYAN, 0.05f));
+                    DrawRectangleLinesEx(btnLaunch, launchHover ? 3 : 2, launchBtnCol);
+                    
+                    const char *launchLabel = "INICIAR SECUENCIA DE LANZAMIENTO";
+                    int lW = MeasureText(launchLabel, 16);
+                    DrawText(launchLabel, btnLaunch.x + btnLaunch.width / 2 - lW / 2, btnLaunch.y + btnLaunch.height / 2 - 8, 16, launchBtnCol);
+                    
+                    DrawText("PULSA [ESC] O [E] PARA SALIR DE LA CONSOLA", screenWidth / 2 - 130, screenHeight - 105, 11, GRAY);
+                }
+                
+                // If a dialog is active, draw dialogue panel at the bottom center of the screen
+                if (activeCrewDialogIdx > 0 && activeNexusOverlay == 0) {
+                    int boxW = 600;
+                    int boxH = 110;
+                    int boxX = screenWidth / 2 - boxW / 2;
+                    int boxY = screenHeight - boxH - 25;
+                    
+                    DrawRectangle(boxX, boxY, boxW, boxH, Fade(BLACK, 0.85f));
+                    
+                    // Show Dialogue based on active crew and clone index
+                    char quoteMsg[380] = { 0 };
+                    Color quoteCol = RAYWHITE;
+                    
+                    if (activeCrewDialogIdx == 1) {
+                        quoteCol = CYAN;
+                        if (currentClone.cloneIndex <= 5) {
+                            sprintf(quoteMsg, "IA: \"Clon #%d en linea. Sincronizacion neuronal al %.1f%%. Bienvenido de vuelta, Operador. Estabilidad de red estable.\"", currentClone.cloneIndex, currentClone.memoryCoherence);
+                        } else if (currentClone.cloneIndex <= 20) {
+                            sprintf(quoteMsg, "IA: \"Clon... #%d... impreso. Memoria aproximada al %.1f%%. Se detectan anomalias de redundancia en tu cortex.\"", currentClone.cloneIndex, currentClone.memoryCoherence);
+                        } else {
+                            sprintf(quoteMsg, "IA: \"ERROR DE COMPATIBILIDAD. Clon #%d impreso. %.1f%% de datos coherentes. Reciclando despojos orgánicos. ¿Por que sigues intentándolo?\"", currentClone.cloneIndex, currentClone.memoryCoherence);
+                        }
+                    } else if (activeCrewDialogIdx == 2) {
+                        quoteCol = LIME;
+                        if (currentClone.cloneIndex <= 5) {
+                            sprintf(quoteMsg, "Cientifico: \"Los datos que recuperaste en tu vida anterior son utiles. Ten cuidado ahi fuera, Hepape.\"");
+                        } else if (currentClone.cloneIndex <= 20) {
+                            sprintf(quoteMsg, "Cientifico: \"¿Seguro que eres el mismo que bajo al planeta helado? Tus pupilas no reaccionan al espectro visible habitual...\"");
+                        } else {
+                            sprintf(quoteMsg, "Cientifico: \"No me mires con esos ojos impresos. Eres solo biomasa reformada numero %d. No sientes dolor, solo imitas el reflejo.\"", currentClone.cloneIndex);
+                        }
+                    } else if (activeCrewDialogIdx == 3) {
+                        quoteCol = PINK;
+                        if (currentClone.cloneIndex <= 5) {
+                            sprintf(quoteMsg, "Soldado: \"Es un alivio verte de nuevo en pie. El vacio no nos vencera.\"");
+                        } else if (currentClone.cloneIndex <= 20) {
+                            sprintf(quoteMsg, "Soldado: \"Te mueves de forma extrana. ¿De verdad eres tu, o la maquina solo ha rellenado los huecos con datos basura?\"");
+                        } else {
+                            sprintf(quoteMsg, "Soldado: \"¿Quien era el original? Ya no queda nadie de la tripulacion inicial. Todos somos fotocopias de fotocopias...\"");
+                        }
+                    }
+                    
+                    DrawRectangleLinesEx((Rectangle){ (float)boxX, (float)boxY, (float)boxW, (float)boxH }, 2, quoteCol);
+                    
+                    float textGlitchAmt = (currentClone.cloneIndex <= 5) ? 0.0f : (currentClone.cloneIndex <= 20) ? 0.15f : 0.65f;
+                    char line1[80] = { 0 };
+                    char line2[80] = { 0 };
+                    char line3[120] = { 0 };
+                    
+                    int quoteLen = strlen(quoteMsg);
+                    if (quoteLen < 62) {
+                        strcpy(line1, quoteMsg);
+                    } else {
+                        strncpy(line1, quoteMsg, 60);
+                        int spaceIdx = 60;
+                        while (spaceIdx > 0 && quoteMsg[spaceIdx] != ' ') spaceIdx--;
+                        if (spaceIdx > 10) {
+                            memset(line1, 0, sizeof(line1));
+                            strncpy(line1, quoteMsg, spaceIdx);
+                            strncpy(line2, quoteMsg + spaceIdx + 1, 60);
+                            int spaceIdx2 = spaceIdx + 1 + 60;
+                            int lastSpace = spaceIdx2;
+                            while (lastSpace > spaceIdx + 1 && quoteMsg[lastSpace] != ' ') lastSpace--;
+                            if (lastSpace > spaceIdx + 10) {
+                                memset(line2, 0, sizeof(line2));
+                                strncpy(line2, quoteMsg + spaceIdx + 1, lastSpace - (spaceIdx + 1));
+                                strcpy(line3, quoteMsg + lastSpace + 1);
+                            } else {
+                                strcpy(line3, quoteMsg + spaceIdx2);
+                            }
+                        } else {
+                            strncpy(line2, quoteMsg + 60, 60);
+                            strcpy(line3, quoteMsg + 120);
+                        }
+                    }
+                    
+                    if (textGlitchAmt > 0.0f) {
+                        DrawTextGlitch(line1, boxX + 20, boxY + 20, 13, quoteCol, textGlitchAmt);
+                        if (strlen(line2) > 0) DrawTextGlitch(line2, boxX + 20, boxY + 45, 13, quoteCol, textGlitchAmt);
+                        if (strlen(line3) > 0) DrawTextGlitch(line3, boxX + 20, boxY + 70, 13, quoteCol, textGlitchAmt);
+                    } else {
+                        DrawText(line1, boxX + 20, boxY + 20, 13, quoteCol);
+                        if (strlen(line2) > 0) DrawText(line2, boxX + 20, boxY + 45, 13, quoteCol);
+                        if (strlen(line3) > 0) DrawText(line3, boxX + 20, boxY + 70, 13, quoteCol);
+                    }
+                }
+            }
             else if (currentScreen == SCREEN_INTRO) {
                 // 1. Draw Starfield background
                 BeginMode3D(camera);
@@ -2183,47 +3908,119 @@ int main(void) {
                 DrawRectangleLines(30, 30, screenWidth - 60, screenHeight - 60, Fade(CYAN, 0.4f));
                 DrawRectangleLines(34, 34, screenWidth - 68, screenHeight - 68, Fade(CYAN, 0.15f));
                 
-                // Story lines
-                const char *storyLines[] = {
-                    "REGISTRO DE MISION: NAVE DE INVESTIGACION USG DEHUMANIZER",
-                    "FECHA ESTELAR: 2146.05.19",
-                    "",
-                    "Hace 48 horas, se perdio toda conexion con la nave medica insignia.",
-                    "Un patogeno alienigena desconocido ha infestado los sistemas biologicos,",
-                    "mutando a la tripulacion en aberraciones ciberneticas hostiles.",
-                    "",
-                    "Como ultimo miembro del escuadron de limpieza tactica:",
-                    "Tu mision es infiltrarte en la nave a traves del muelle de carga,",
-                    "purgar la infestacion de cada compartimento de combate,",
-                    "y sobrecargar el nucleo del reactor principal para vaporizar la amenaza.",
-                    "",
-                    "INSTRUCCIONES DE SUPERVIVENCIA:",
-                    "- Moverse: Teclas [W], [A], [S], [D]",
-                    "- Apuntar y Disparar: Mover el MOUSE y boton CLIC IZQUIERDO",
-                    "- Cambiar Sala: Cruza los pasillos cuando esten despejados",
-                    "- Mejoras: Encuentra las salas del tesoro para aumentar tu potencia"
-                };
-                int numLines = 17;
-                int startY = screenHeight / 2 - 220;
-                if (startY < 45) startY = 45;
-                
-                for (int i = 0; i < numLines; i++) {
-                    Color col = RAYWHITE;
-                    int size = 18;
-                    if (i == 0) { col = GOLD; size = 20; }
-                    else if (i == 1) { col = CYAN; size = 15; }
-                    else if (i >= 12) { col = LIME; size = 16; }
+                // Story lines or Clone diagnosis depending on index
+                if (currentClone.cloneIndex == 1) {
+                    const char *storyLines[] = {
+                        "REGISTRO DE MISION: NAVE DE INVESTIGACION USG DEHUMANIZER",
+                        "FECHA ESTELAR: 2146.05.19",
+                        "",
+                        "Hace 48 horas, se perdio toda conexion con la nave medica insignia.",
+                        "Un patogeno alienigena desconocido ha infestado los sistemas biologicos,",
+                        "mutando a la tripulacion en aberraciones ciberneticas hostiles.",
+                        "",
+                        "Como ultimo miembro del escuadron de limpieza tactica:",
+                        "Tu mision es infiltrarte en la nave a traves del muelle de carga,",
+                        "purgar la infestacion de cada compartimento de combate,",
+                        "y sobrecargar el nucleo del reactor principal para vaporizar la amenaza.",
+                        "",
+                        "INSTRUCCIONES DE SUPERVIVENCIA:",
+                        "- Moverse: Teclas [W], [A], [S], [D]",
+                        "- Apuntar y Disparar: Mover el MOUSE y boton CLIC IZQUIERDO",
+                        "- Cambiar Sala: Cruza los pasillos cuando esten despejados",
+                        "- Mejoras: Encuentra las salas del tesoro para aumentar tu potencia"
+                    };
+                    int numLines = 17;
+                    int startY = screenHeight / 2 - 220;
+                    if (startY < 45) startY = 45;
                     
-                    int textW = MeasureText(storyLines[i], size);
+                    for (int i = 0; i < numLines; i++) {
+                        Color col = RAYWHITE;
+                        int size = 18;
+                        if (i == 0) { col = GOLD; size = 20; }
+                        else if (i == 1) { col = CYAN; size = 15; }
+                        else if (i >= 12) { col = LIME; size = 16; }
+                        
+                        int textW = MeasureText(storyLines[i], size);
+                        
+                        // Typewriter fade-in effect based on introTimer
+                        float lineDelay = (float)i * 0.4f;
+                        float lineProgress = (introTimer - lineDelay) * 2.0f;
+                        if (lineProgress < 0.0f) lineProgress = 0.0f;
+                        if (lineProgress > 1.0f) lineProgress = 1.0f;
+                        
+                        Color lineCol = Fade(col, lineProgress);
+                        DrawText(storyLines[i], screenWidth / 2 - textW / 2, startY + i * 24, size, lineCol);
+                    }
+                } else {
+                    // Clone diagnosis mode
+                    char title[128];
+                    char subtitle[128];
+                    sprintf(title, "DIAGNOSTICO DE RE-IMPRESION ORGANICA (CLON #%03d)", currentClone.cloneIndex);
+                    sprintf(subtitle, "COHERENCIA DE MEMORIA: %.1f%%  |  PARANOIA SINAPTICA: %.1f%%", currentClone.memoryCoherence, currentClone.paranoiaLevel);
                     
-                    // Typewriter fade-in effect based on introTimer
-                    float lineDelay = (float)i * 0.4f;
-                    float lineProgress = (introTimer - lineDelay) * 2.0f;
-                    if (lineProgress < 0.0f) lineProgress = 0.0f;
-                    if (lineProgress > 1.0f) lineProgress = 1.0f;
+                    char msgIA[256];
+                    char msgCien[256];
+                    char msgSold[256];
                     
-                    Color lineCol = Fade(col, lineProgress);
-                    DrawText(storyLines[i], screenWidth / 2 - textW / 2, startY + i * 24, size, lineCol);
+                    Color statusColor = GREEN;
+                    if (currentClone.cloneIndex <= 5) {
+                        sprintf(msgIA, "IA DE A BORDO: \"Clon #%d en linea. Sincronizacion neuronal al %.1f%%. Bienvenido, Operador.\"", currentClone.cloneIndex, currentClone.memoryCoherence);
+                        sprintf(msgCien, "CIENTIFICO: \"Los datos que recuperaste en tu vida anterior son utiles. Ten cuidado ahi fuera, Hepape.\"");
+                        sprintf(msgSold, "SOLDADO: \"Es un alivio verte de nuevo en pie. El vacio no nos vencera.\"");
+                    } else if (currentClone.cloneIndex <= 20) {
+                        statusColor = ORANGE;
+                        sprintf(msgIA, "IA DE A BORDO: \"Clon... #%d... impreso. Memoria al %.1f%%. Se detectan anomalias de redundancia.\"", currentClone.cloneIndex, currentClone.memoryCoherence);
+                        sprintf(msgCien, "CIENTIFICO: \"¿Seguro que eres el mismo? Tus pupilas no reaccionan al espectro visible habitual...\"");
+                        sprintf(msgSold, "SOLDADO: \"Te mueves raro. ¿De verdad eres tu, o la maquina solo relleno los huecos con datos basura?\"");
+                    } else {
+                        statusColor = RED;
+                        sprintf(msgIA, "IA DE A BORDO: \"ERROR DE COMPATIBILIDAD. Clon #%d impreso. %.1f%% coherencia. Reciclando despojos...\"", currentClone.cloneIndex, currentClone.memoryCoherence);
+                        sprintf(msgCien, "CIENTIFICO: \"No me mires con esos ojos impresos. Eres solo biomasa reformada #%d. Solo imitas el reflejo.\"", currentClone.cloneIndex);
+                        sprintf(msgSold, "SOLDADO: \"¿Quien era el original? Ya no queda nadie de la tripulacion inicial. Fotocopias de fotocopias...\"");
+                    }
+                    
+                    int startY = screenHeight / 2 - 180;
+                    if (startY < 45) startY = 45;
+                    
+                    // Render title
+                    int textW = MeasureText(title, 20);
+                    DrawText(title, screenWidth / 2 - textW / 2, startY, 20, statusColor);
+                    
+                    // Render subtitle
+                    textW = MeasureText(subtitle, 16);
+                    DrawText(subtitle, screenWidth / 2 - textW / 2, startY + 30, 16, RAYWHITE);
+                    
+                    // Line separator
+                    DrawLine(50, startY + 60, screenWidth - 50, startY + 60, Fade(statusColor, 0.5f));
+                    
+                    // Crew dialogue quotes
+                    const char* quotes[6] = {
+                        "--- TRANSMISIONES DE LA NAVE ---",
+                        "",
+                        msgIA,
+                        msgCien,
+                        msgSold,
+                        ""
+                    };
+                    
+                    for (int i = 0; i < 6; i++) {
+                        Color col = RAYWHITE;
+                        int size = 16;
+                        if (i == 0) { col = GOLD; size = 16; }
+                        else if (i == 2) { col = CYAN; }
+                        else if (i == 3) { col = LIME; }
+                        else if (i == 4) { col = PINK; }
+                        
+                        // Glitch text for dialogue if clone stage is high
+                        float glitchAmt = (currentClone.cloneIndex <= 5) ? 0.0f : (currentClone.cloneIndex <= 20) ? 0.15f : 0.75f;
+                        
+                        int textW = MeasureText(quotes[i], size);
+                        if (glitchAmt > 0.0f && i >= 2) {
+                            DrawTextGlitch(quotes[i], screenWidth / 2 - textW / 2, startY + 90 + i * 32, size, col, glitchAmt);
+                        } else {
+                            DrawText(quotes[i], screenWidth / 2 - textW / 2, startY + 90 + i * 32, size, col);
+                        }
+                    }
                 }
                 
                 // Pulsing indicator to continue
@@ -2238,6 +4035,15 @@ int main(void) {
                 Room &room = dungeon[currentRoomY][currentRoomX];
                 Vector3 groundAim = GetMouseGroundIntersection(camera);
                 Vector3 mouseIntersect = groundAim;
+                
+                Color roomTint = WHITE;
+                if (currentPlanet.hazard == HAZARD_SOLAR_STORM) {
+                    roomTint = (Color){ 255, 210, 180, 255 };
+                } else if (currentPlanet.hazard == HAZARD_TOXIC_FOG) {
+                    roomTint = (Color){ 190, 255, 190, 255 };
+                } else if (currentPlanet.hazard == HAZARD_FROZEN_WASTE) {
+                    roomTint = (Color){ 180, 220, 255, 255 };
+                }
                 
                 BeginMode3D(camera);
                     
@@ -2279,7 +4085,7 @@ int main(void) {
                             }
                             
                             Rectangle tileSrc = { (float)tileCol * 32.0f, 2.0f * 32.0f, 32.0f, 32.0f };
-                            DrawFloorTile(envSpritesheet, tileSrc, (Vector3){ px, 0.0f, pz }, (Vector2){ 1.0f, 1.0f }, WHITE);
+                            DrawFloorTile(envSpritesheet, tileSrc, (Vector3){ px, 0.0f, pz }, (Vector2){ 1.0f, 1.0f }, roomTint);
                         }
                     }
                     
@@ -2308,10 +4114,10 @@ int main(void) {
                                     } else {
                                         // open doorway floor tile path
                                         Rectangle openPathSrc = { (float)tileOffsetCol * 32.0f, 2.0f * 32.0f, 32.0f, 32.0f };
-                                        DrawFloorTile(envSpritesheet, openPathSrc, (Vector3){ px, 0.0f, pz }, (Vector2){ 1.0f, 1.0f }, WHITE);
+                                        DrawFloorTile(envSpritesheet, openPathSrc, (Vector3){ px, 0.0f, pz }, (Vector2){ 1.0f, 1.0f }, roomTint);
                                     }
                                 } else {
-                                    DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ px, 2.0f, pz }, (Vector3){ 1.0f, 4.0f, 1.0f }, WHITE);
+                                    DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ px, 2.0f, pz }, (Vector3){ 1.0f, 4.0f, 1.0f }, roomTint);
                                 }
                             }
                         }
@@ -2319,7 +4125,7 @@ int main(void) {
                     
                     for (int i = 0; i < room.numPillars; i++) {
                         Rectangle pillarSrc = { (float)tileOffsetCol * 32.0f, 0.0f, 32.0f, 32.0f };
-                        DrawWallBlock(envSpritesheet, pillarSrc, room.pillars[i], (Vector3){ 1.6f, 4.0f, 1.6f }, WHITE);
+                        DrawWallBlock(envSpritesheet, pillarSrc, room.pillars[i], (Vector3){ 1.6f, 4.0f, 1.6f }, roomTint);
                     }
                     
                     // Render Toxic Gas clouds on the ground flat
@@ -2495,9 +4301,30 @@ int main(void) {
                     DrawCircle3D(mouseIntersect, 0.4f, (Vector3){ 1.0f, 0.0f, 0.0f }, 90.0f, Fade(RED, 0.6f));
                     DrawCircle3D(mouseIntersect, 0.12f, (Vector3){ 1.0f, 0.0f, 0.0f }, 90.0f, RED);
                     
+                    // Draw Swarm Heart drones in 3D space
+                    if (activeRelics[1].active) {
+                        float time = (float)GetTime() * 3.0f;
+                        for (int d = 0; d < 3; d++) {
+                            float angle = time + (float)d * 2.0f * PI / 3.0f;
+                            Vector3 dronePos = {
+                                player.position.x + cosf(angle) * 1.2f,
+                                player.position.y + 0.4f + sinf(time * 2.0f + (float)d) * 0.15f,
+                                player.position.z + sinf(angle) * 1.2f
+                            };
+                            DrawSphere(dronePos, 0.15f, LIME);
+                            if (GetRandomValue(0, 100) < 30) {
+                                SpawnParticles(dronePos, LIME, 1);
+                            }
+                        }
+                    }
+                    
                 EndMode3D();
                 
                 // --- 2D OVERLAYS & HUD UI ---
+                if (currentPlanet.hazard != HAZARD_NONE) {
+                    DrawRectangle(0, 0, screenWidth, screenHeight, currentPlanet.atmosphericTint);
+                }
+                
                 // Enemy Screen space health bars
                 for (int i = 0; i < room.numEnemies; i++) {
                     if (room.enemies[i].health <= 0) continue;
@@ -2514,21 +4341,85 @@ int main(void) {
                     }
                 }
                 
-                // Active Upgrades HUD Icons
-                int upgY = 120;
+                // Draw Dehumanizer HUD!
+                DrawDehumanizerHUD(currentClone, playerHalfHeartsHealth * 10, playerMaxHearts * 20, 0, gameTimer);
+                
+                // Draw Atmospheric Hazard HUD
+                if (currentPlanet.hazard != HAZARD_NONE) {
+                    int hazY = 135;
+                    DrawRectangle(screenWidth - 250, hazY, 210, 85, Fade(BLACK, 0.6f));
+                    DrawRectangleLines(screenWidth - 250, hazY, 210, 85, DARKGRAY);
+                    Color hazardCol = RED;
+                    const char* hazName = "DESCONOCIDO";
+                    if (currentPlanet.hazard == HAZARD_SOLAR_STORM) {
+                        hazName = "TORMENTA SOLAR";
+                        hazardCol = ORANGE;
+                    } else if (currentPlanet.hazard == HAZARD_TOXIC_FOG) {
+                        hazName = "NIEBLA TOXICA";
+                        hazardCol = LIME;
+                    } else if (currentPlanet.hazard == HAZARD_FROZEN_WASTE) {
+                        hazName = "PLANETA HELADO";
+                        hazardCol = SKYBLUE;
+                    }
+                    
+                    float glitch = currentClone.cloneIndex > 20 ? 0.35f : 0.0f;
+                    DrawTextGlitch(TextFormat("PELIGRO: %s", hazName), screenWidth - 235, hazY + 8, 12, hazardCol, glitch);
+                    
+                    DrawText(TextFormat("TRAJE INTEGRIDAD: %.0f%%", player.suitIntegrity), screenWidth - 235, hazY + 28, 11, player.suitIntegrity > 25.0f ? WHITE : RED);
+                    DrawRectangle(screenWidth - 235, hazY + 41, 180, 6, BLACK);
+                    DrawRectangle(screenWidth - 235, hazY + 41, (int)(1.8f * player.suitIntegrity), 6, hazardCol);
+                    
+                    DrawText(TextFormat("OXIGENO RESERVA: %.0f%%", player.oxygenLevel), screenWidth - 235, hazY + 54, 11, player.oxygenLevel > 25.0f ? CYAN : RED);
+                    DrawRectangle(screenWidth - 235, hazY + 67, 180, 6, BLACK);
+                    DrawRectangle(screenWidth - 235, hazY + 67, (int)(1.8f * player.oxygenLevel), 6, CYAN);
+                }
+                
+                // Mothership meta-progression HUD
+                int msY = 230;
+                DrawRectangle(screenWidth - 250, msY, 210, 95, Fade(BLACK, 0.6f));
+                DrawRectangleLines(screenWidth - 250, msY, 210, 95, DARKGRAY);
+                DrawText("NAVE NODRIZA (Meta)", screenWidth - 235, msY + 8, 12, GOLD);
+                DrawText(TextFormat("Invernadero: Lvl %d", motherShip.greenhouse.level), screenWidth - 235, msY + 28, 11, GREEN);
+                DrawText(TextFormat("Armeria: Lvl %d", motherShip.armory.level), screenWidth - 235, msY + 44, 11, RED);
+                DrawText(TextFormat("Motores: Lvl %d", motherShip.engineRoom.level), screenWidth - 235, msY + 60, 11, CYAN);
+                DrawText(TextFormat("Recursos: %d Isotopos", motherShip.isotopicResources), screenWidth - 235, msY + 76, 11, ORANGE);
+                
+                // Active Upgrades / Relics HUD Icons
+                int upgY = 230;
+                for (int r = 0; r < 3; r++) {
+                    if (activeRelics[r].active) {
+                        DrawRectangle(40, upgY, 220, 24, Fade(BLACK, 0.6f));
+                        DrawRectangleLines(40, upgY, 220, 24, PURPLE);
+                        DrawText(TextFormat("REL: %s", activeRelics[r].name), 46, upgY + 5, 11, VIOLET);
+                        upgY += 28;
+                    }
+                }
                 if (hasCyberEye) {
-                    DrawRectangle(40, upgY, 130, 24, Fade(BLACK, 0.6f));
-                    DrawText("OJO CIBERNETICO", 46, upgY + 5, 12, LIME);
-                    upgY += 30;
+                    DrawRectangle(40, upgY, 220, 24, Fade(BLACK, 0.6f));
+                    DrawText("MEJORA: OJO CIBERNETICO", 46, upgY + 5, 11, LIME);
+                    upgY += 28;
                 }
                 if (hasThrusterBoots) {
-                    DrawRectangle(40, upgY, 130, 24, Fade(BLACK, 0.6f));
-                    DrawText("BOTAS PROPULSORAS", 46, upgY + 5, 12, CYAN);
-                    upgY += 30;
+                    DrawRectangle(40, upgY, 220, 24, Fade(BLACK, 0.6f));
+                    DrawText("MEJORA: BOTAS PROPULSORAS", 46, upgY + 5, 11, CYAN);
+                    upgY += 28;
                 }
                 if (hasAcidGlands) {
-                    DrawRectangle(40, upgY, 130, 24, Fade(BLACK, 0.6f));
-                    DrawText("GLANDULAS ACIDO", 46, upgY + 5, 12, GREEN);
+                    DrawRectangle(40, upgY, 220, 24, Fade(BLACK, 0.6f));
+                    DrawText("MEJORA: GLANDULAS DE ACIDO", 46, upgY + 5, 11, GREEN);
+                    upgY += 28;
+                }
+                if (player.activeWeapon.projectileSlot.hasBounce) {
+                    DrawRectangle(40, upgY, 220, 24, Fade(BLACK, 0.6f));
+                    DrawRectangleLines(40, upgY, 220, 24, SKYBLUE);
+                    DrawText("MOD: REBOTE GRAVITATORIO", 46, upgY + 5, 11, SKYBLUE);
+                    upgY += 28;
+                }
+                if (player.activeWeapon.modifierSlot.hasPiercing) {
+                    DrawRectangle(40, upgY, 220, 24, Fade(BLACK, 0.6f));
+                    DrawRectangleLines(40, upgY, 220, 24, RED);
+                    DrawText("MOD: PERFORACION PLASMA", 46, upgY + 5, 11, RED);
+                    upgY += 28;
                 }
                 
                 // Mini-map
@@ -2555,14 +4446,15 @@ int main(void) {
                 // Draw heart UI energy containers
                 DrawHeartUI(40, screenHeight - 65, playerHalfHeartsHealth, playerMaxHearts);
                 
-                DrawText(TextFormat("TIME: %.1fs", gameTimer), 40, 30, 22, GOLD);
+                float textGlitch = currentClone.cloneIndex > 20 ? 0.4f : currentClone.cloneIndex > 5 ? 0.1f : 0.0f;
+                DrawTextGlitch(TextFormat("TIME: %.1fs", gameTimer), 40, 135, 22, GOLD, textGlitch);
                 const char *typeStr = (room.type == ROOM_START) ? "COMPARTIMENTO DE ENTRADA (Seguro)" :
                                       (room.type == ROOM_TREASURE) ? "ZONA DE CARGA DEL TESORO" :
                                       (room.type == ROOM_BOSS) ? "¡NUCLEO DEL JEFE MUTANTE!" : "COMPARTIMENTO DE COMBATE";
-                DrawText(typeStr, 40, 60, 18, CYAN);
+                DrawTextGlitch(typeStr, 40, 165, 18, CYAN, textGlitch);
                 
-                if (!room.cleared) DrawText("¡COMPARTIMENTOS SELLADOS! Purga la infestacion.", 40, 90, 16, RED);
-                else DrawText("Zona purgada. Usa las compuertas WASD para avanzar.", 40, 90, 16, LIME);
+                if (!room.cleared) DrawTextGlitch("¡COMPARTIMENTOS SELLADOS! Purga la infestation.", 40, 195, 16, RED, textGlitch);
+                else DrawTextGlitch("Zona purgada. Usa las compuertas WASD para avanzar.", 40, 195, 16, LIME, textGlitch);
                 
                 if (currentScreen == SCREEN_GAMEOVER) {
                     DrawRectangle(0, 0, screenWidth, screenHeight, Fade(BLACK, 0.75f));
@@ -2587,8 +4479,20 @@ int main(void) {
                 }
             }
             
-            DrawFPS(screenWidth - 80, screenHeight - 40);
+            if (useRenderTarget) {
+                EndTextureMode();
+                
+                BeginDrawing();
+                ClearBackground(BLACK);
+                BeginShaderMode(activeShader);
+                    DrawTexturePro(targetTex.texture, 
+                        (Rectangle){ 0.0f, 0.0f, (float)targetTex.texture.width, (float)-targetTex.texture.height },
+                        (Rectangle){ 0.0f, 0.0f, (float)screenWidth, (float)screenHeight },
+                        (Vector2){ 0.0f, 0.0f }, 0.0f, WHITE);
+                EndShaderMode();
+            }
             
+            DrawFPS(screenWidth - 80, screenHeight - 40);
         EndDrawing();
     }
     
@@ -2597,6 +4501,10 @@ int main(void) {
     UnloadModel(cubeModel);
     UnloadTexture(envSpritesheet);
     UnloadTexture(charSpritesheet);
+    
+    UnloadShader(nebulaShader);
+    UnloadShader(tachyonShader);
+    UnloadRenderTexture(targetTex);
     
     CloseWindow();
     return 0;
