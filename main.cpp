@@ -1506,6 +1506,11 @@ void GenerateProceduralDungeon() {
         }
     }
     
+    // Apply Cellular Automata Organic Carving to all spawned rooms
+    for (int i = 0; i < spawnedCount; i++) {
+        CarveOrganicRoom(dungeon[spawnedCoords[i].y][spawnedCoords[i].x]);
+    }
+    
     // Boss Room
     int furthestIdx = 0;
     float maxDist = 0.0f;
@@ -3315,6 +3320,11 @@ int main(void) {
                 camera.position.y += (float)GetRandomValue(-100, 100) * 0.003f * screenShake;
                 camera.position.z += (float)GetRandomValue(-100, 100) * 0.003f * screenShake;
                 screenShake -= dt * 2.0f;
+            }
+            
+            // Generate Pathfinding Flow Field to Player
+            if (currentRoom.numEnemies > 0 && !currentRoom.cleared) {
+                UpdateFlowField(currentRoom, player.position);
             }
             
             // --- UPDATE DECORATIONS & INSECTS ---
