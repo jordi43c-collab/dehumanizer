@@ -1569,11 +1569,22 @@ void GenerateProceduralDungeon() {
             
             r.numEnemies = enemyCount;
             for (int e = 0; e < r.numEnemies; e++) {
-                r.enemies[e].position = (Vector3){
-                    (float)GetRandomValue(-5, 5) * 1.2f,
-                    1.0f,
-                    (float)GetRandomValue(-5, 5) * 1.2f
-                };
+                bool validSpawn = false;
+                Vector3 spawnPos = { 0.0f, 1.0f, 0.0f };
+                int safetyLimit = 50;
+                while (!validSpawn && safetyLimit > 0) {
+                    spawnPos.x = (float)GetRandomValue(-7, 7) * 1.0f;
+                    spawnPos.z = (float)GetRandomValue(-7, 7) * 1.0f;
+                    int gx = (int)(spawnPos.x + 10.5f);
+                    int gz = (int)(spawnPos.z + 10.5f);
+                    if (gx >= 0 && gx < 21 && gz >= 0 && gz < 21) { // ROOM_GRID_SIZE is 21
+                        if (r.wallTileVariants[gz][gx] < 0) {
+                            validSpawn = true;
+                        }
+                    }
+                    safetyLimit--;
+                }
+                r.enemies[e].position = spawnPos;
                 r.enemies[e].radius = 0.55f;
                 r.enemies[e].state = STATE_RUN;
                 r.enemies[e].stateTimer = 0.0f;
