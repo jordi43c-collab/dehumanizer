@@ -2184,7 +2184,7 @@ int main(void) {
                 btnPlanets[p] = (Rectangle){ (float)(mapX + 20), (float)(planetStartY + 45 + p * 34), 360.0f, 28.0f };
             }
             
-            Rectangle btnLaunch = { (float)(screenWidth / 2 - 200), (float)(screenHeight - 85), 400.0f, 50.0f };
+            Rectangle btnLaunch = { (float)(screenWidth / 2 - 200), (float)(screenHeight - 165), 400.0f, 50.0f };
             
             Rectangle btnTabModules = { (float)panelX, (float)(startY - 32), 150.0f, 30.0f };
             Rectangle btnTabWeapon = { (float)(panelX + 155), (float)(startY - 32), 150.0f, 30.0f };
