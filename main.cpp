@@ -387,6 +387,7 @@ struct Room {
     
     int floorTileVariants[ROOM_GRID_SIZE][ROOM_GRID_SIZE];
     int wallTileVariants[ROOM_GRID_SIZE][ROOM_GRID_SIZE];
+    int flowField[ROOM_GRID_SIZE][ROOM_GRID_SIZE];
     
     int numPillars;
     Vector3 pillars[MAX_ROOM_PILLARS];
@@ -1302,6 +1303,129 @@ Texture2D GenerateEnvironmentTileSheet() {
     return tex;
 }
 
+
+// --- MAP GEN & TILE COLLISIONS ---
+void CarveOrganicRoom(Room& room) {
+    // 1. Initialize random grid
+    for (int y = 0; y < ROOM_GRID_SIZE; y++) {
+        for (int x = 0; x < ROOM_GRID_SIZE; x++) {
+            if (x == 0 || x == ROOM_GRID_SIZE - 1 || y == 0 || y == ROOM_GRID_SIZE - 1) {
+                room.wallTileVariants[y][x] = 1;
+            } else {
+                room.wallTileVariants[y][x] = (GetRandomValue(0, 100) < 42) ? 1 : 0;
+            }
+        }
+    }
+    
+    // 2. Cellular Automata Smoothing (5 passes)
+    for (int pass = 0; pass < 5; pass++) {
+        int tempGrid[ROOM_GRID_SIZE][ROOM_GRID_SIZE];
+        for (int y = 0; y < ROOM_GRID_SIZE; y++) {
+            for (int x = 0; x < ROOM_GRID_SIZE; x++) {
+                int wallNeighbors = 0;
+                for (int ny = y - 1; ny <= y + 1; ny++) {
+                    for (int nx = x - 1; nx <= x + 1; nx++) {
+                        if (nx >= 0 && nx < ROOM_GRID_SIZE && ny >= 0 && ny < ROOM_GRID_SIZE) {
+                            if (ny != y || nx != x) {
+                                wallNeighbors += room.wallTileVariants[ny][nx];
+                            }
+                        } else {
+                            wallNeighbors++; // out of bounds
+                        }
+                    }
+                }
+                
+                if (room.wallTileVariants[y][x] == 1) {
+                    tempGrid[y][x] = (wallNeighbors >= 4) ? 1 : 0;
+                } else {
+                    tempGrid[y][x] = (wallNeighbors >= 5) ? 1 : 0;
+                }
+            }
+        }
+        for (int y = 0; y < ROOM_GRID_SIZE; y++) {
+            for (int x = 0; x < ROOM_GRID_SIZE; x++) {
+                room.wallTileVariants[y][x] = tempGrid[y][x];
+            }
+        }
+    }
+    
+    // 3. Clear paths and center
+    for (int y = 9; y <= 11; y++) {
+        for (int x = 9; x <= 11; x++) {
+            room.wallTileVariants[y][x] = 0;
+        }
+    }
+    if (room.doors[0]) { for(int y=0; y<3; y++) { room.wallTileVariants[y][10]=0; room.wallTileVariants[y][9]=0; room.wallTileVariants[y][11]=0; } } // Top
+    if (room.doors[1]) { for(int y=ROOM_GRID_SIZE-3; y<ROOM_GRID_SIZE; y++) { room.wallTileVariants[y][10]=0; room.wallTileVariants[y][9]=0; room.wallTileVariants[y][11]=0; } } // Bottom
+    if (room.doors[2]) { for(int x=0; x<3; x++) { room.wallTileVariants[10][x]=0; room.wallTileVariants[9][x]=0; room.wallTileVariants[11][x]=0; } } // Left
+    if (room.doors[3]) { for(int x=ROOM_GRID_SIZE-3; x<ROOM_GRID_SIZE; x++) { room.wallTileVariants[10][x]=0; room.wallTileVariants[9][x]=0; room.wallTileVariants[11][x]=0; } } // Right
+    
+    // 4. Map to visuals
+    for (int y = 0; y < ROOM_GRID_SIZE; y++) {
+        for (int x = 0; x < ROOM_GRID_SIZE; x++) {
+            if (room.wallTileVariants[y][x] > 0) {
+                room.wallTileVariants[y][x] = GetRandomValue(0, 1);
+                room.floorTileVariants[y][x] = 0;
+            } else {
+                room.wallTileVariants[y][x] = -1; // -1 means NO WALL!
+                room.floorTileVariants[y][x] = GetRandomValue(0, 1);
+            }
+        }
+    }
+}
+
+void ResolveTileCollisions(Vector3& pos, float radius, Room& currentRoom) {
+    int gridX = (int)(pos.x + 10.5f);
+    int gridZ = (int)(pos.z + 10.5f);
+    
+    for (int z = gridZ - 1; z <= gridZ + 1; z++) {
+        for (int x = gridX - 1; x <= gridX + 1; x++) {
+            if (x >= 0 && x < ROOM_GRID_SIZE && z >= 0 && z < ROOM_GRID_SIZE) {
+                if (currentRoom.wallTileVariants[z][x] >= 0) {
+                    float wallX = (float)(x - 10);
+                    float wallZ = (float)(z - 10);
+                    
+                    float nearestX = fmaxf(wallX - 0.5f, fminf(pos.x, wallX + 0.5f));
+                    float nearestZ = fmaxf(wallZ - 0.5f, fminf(pos.z, wallZ + 0.5f));
+                    
+                    float dx = pos.x - nearestX;
+                    float dz = pos.z - nearestZ;
+                    float distSq = dx * dx + dz * dz;
+                    if (distSq < radius * radius && distSq > 0.001f) {
+                        float dist = sqrtf(distSq);
+                        float overlap = radius - dist;
+                        pos.x += (dx / dist) * overlap;
+                        pos.z += (dz / dist) * overlap;
+                    }
+                }
+            }
+        }
+    }
+}
+
+bool CheckTileCollision(Vector3 pos, float radius, Room& currentRoom) {
+    int gridX = (int)(pos.x + 10.5f);
+    int gridZ = (int)(pos.z + 10.5f);
+    for (int z = gridZ - 1; z <= gridZ + 1; z++) {
+        for (int x = gridX - 1; x <= gridX + 1; x++) {
+            if (x >= 0 && x < ROOM_GRID_SIZE && z >= 0 && z < ROOM_GRID_SIZE) {
+                if (currentRoom.wallTileVariants[z][x] >= 0) {
+                    float wallX = (float)(x - 10);
+                    float wallZ = (float)(z - 10);
+                    float nearestX = fmaxf(wallX - 0.5f, fminf(pos.x, wallX + 0.5f));
+                    float nearestZ = fmaxf(wallZ - 0.5f, fminf(pos.z, wallZ + 0.5f));
+                    float dx = pos.x - nearestX;
+                    float dz = pos.z - nearestZ;
+                    if (dx * dx + dz * dz < radius * radius) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
 // Procedural Spaceship Dungeon Generator
 void GenerateProceduralDungeon() {
     for (int y = 0; y < DUNGEON_SIZE; y++) {
@@ -1737,6 +1861,121 @@ void DrawHeartUI(int x, int y, int health, int maxHearts) {
     }
 }
 
+// --- STATE MACHINE (FSM) ---
+#define MAX_STATE_STACK 10
+GameScreen stateStack[MAX_STATE_STACK];
+int stateStackTop = 0;
+
+void InitStateStack() {
+    stateStack[0] = SCREEN_TITLE;
+    stateStackTop = 0;
+}
+
+void PushState(GameScreen screen) {
+    if (stateStackTop < MAX_STATE_STACK - 1) {
+        stateStackTop++;
+        stateStack[stateStackTop] = screen;
+    }
+}
+
+void PopState() {
+    if (stateStackTop > 0) {
+        stateStackTop--;
+    }
+}
+
+void ChangeState(GameScreen screen) {
+    stateStack[stateStackTop] = screen;
+}
+
+GameScreen GetCurrentState() {
+    return stateStack[stateStackTop];
+}
+
+bool IsStateInStack(GameScreen screen) {
+    for (int i = 0; i <= stateStackTop; i++) {
+        if (stateStack[i] == screen) return true;
+    }
+    return false;
+}
+
+#define currentScreen GetCurrentState()
+
+
+// --- AI FLOW FIELD NAVIGATION ---
+void UpdateFlowField(Room& room, Vector3 targetPos) {
+    // Reset flow field
+    for (int y = 0; y < ROOM_GRID_SIZE; y++) {
+        for (int x = 0; x < ROOM_GRID_SIZE; x++) {
+            room.flowField[y][x] = 9999;
+        }
+    }
+    
+    int startX = (int)(targetPos.x + 10.5f);
+    int startY = (int)(targetPos.z + 10.5f);
+    if (startX < 0 || startX >= ROOM_GRID_SIZE || startY < 0 || startY >= ROOM_GRID_SIZE) return;
+    
+    struct Node { int x; int y; };
+    Node queue[ROOM_GRID_SIZE * ROOM_GRID_SIZE];
+    int qHead = 0, qTail = 0;
+    
+    queue[qTail++] = { startX, startY };
+    room.flowField[startY][startX] = 0;
+    
+    int dx[] = { 0, 0, -1, 1, -1, 1, -1, 1 };
+    int dy[] = { -1, 1, 0, 0, -1, -1, 1, 1 };
+    
+    while (qHead < qTail) {
+        Node curr = queue[qHead++];
+        int dist = room.flowField[curr.y][curr.x];
+        
+        for (int i = 0; i < 8; i++) {
+            int nx = curr.x + dx[i];
+            int ny = curr.y + dy[i];
+            
+            if (nx >= 0 && nx < ROOM_GRID_SIZE && ny >= 0 && ny < ROOM_GRID_SIZE) {
+                if (room.wallTileVariants[ny][nx] < 0) { // Walkable
+                    int newDist = dist + (i < 4 ? 10 : 14); // 10 straight, 14 diagonal
+                    if (newDist < room.flowField[ny][nx]) {
+                        room.flowField[ny][nx] = newDist;
+                        queue[qTail++] = { nx, ny };
+                    }
+                }
+            }
+        }
+    }
+}
+
+Vector3 GetFlowFieldDirection(Room& room, Vector3 pos) {
+    int x = (int)(pos.x + 10.5f);
+    int y = (int)(pos.z + 10.5f);
+    if (x < 0 || x >= ROOM_GRID_SIZE || y < 0 || y >= ROOM_GRID_SIZE) return {0,0,0};
+    
+    int dx[] = { 0, 0, -1, 1, -1, 1, -1, 1 };
+    int dy[] = { -1, 1, 0, 0, -1, -1, 1, 1 };
+    
+    int bestDist = room.flowField[y][x];
+    int bestX = x;
+    int bestY = y;
+    
+    for (int i = 0; i < 8; i++) {
+        int nx = x + dx[i];
+        int ny = y + dy[i];
+        if (nx >= 0 && nx < ROOM_GRID_SIZE && ny >= 0 && ny < ROOM_GRID_SIZE) {
+            if (room.flowField[ny][nx] < bestDist) {
+                bestDist = room.flowField[ny][nx];
+                bestX = nx;
+                bestY = ny;
+            }
+        }
+    }
+    
+    if (bestX == x && bestY == y) return {0,0,0};
+    
+    Vector3 dir = { (float)(bestX - x), 0.0f, (float)(bestY - y) };
+    return Vector3Normalize(dir);
+}
+
 int main(void) {
     int screenWidth = 1280;
     int screenHeight = 720;
@@ -1790,11 +2029,13 @@ int main(void) {
     int blurLoc = GetShaderLocation(tachyonShader, "blurAmount");
     
     RenderTexture2D targetTex = LoadRenderTexture(1280, 720);
+    RenderTexture2D lightMap = LoadRenderTexture(1280, 720);
     
     float gameTimer = 0.0f;
     float screenShake = 0.0f;
-    GameScreen currentScreen = SCREEN_TITLE;
     
+    InitStateStack();
+
     auto ResetGame = [&]() {
         GenerateProceduralPlanet();
         
@@ -1907,19 +2148,19 @@ int main(void) {
                     if (CheckCollisionPointRec(mousePos, btnNorm)) selectedDifficulty = DIFF_NORMAL;
                     if (CheckCollisionPointRec(mousePos, btnHard)) selectedDifficulty = DIFF_HARD;
                     if (CheckCollisionPointRec(mousePos, btnStart)) {
-                        currentScreen = SCREEN_NEXUS;
+                        ChangeState(SCREEN_NEXUS);
                     }
                 }
                 
                 if (IsKeyPressed(KEY_ENTER)) {
-                    currentScreen = SCREEN_NEXUS;
+                    ChangeState(SCREEN_NEXUS);
                 }
             }
             else { // SCREEN_INTRO
                 introTimer += dt;
                 if (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
                     ResetGame();
-                    currentScreen = SCREEN_GAMEPLAY;
+                    ChangeState(SCREEN_GAMEPLAY);
                 }
             }
         }
@@ -2170,7 +2411,7 @@ int main(void) {
                         // Launch Sequence!
                         if (CheckCollisionPointRec(mousePos, btnLaunch)) {
                             activeNexusOverlay = 0;
-                            currentScreen = SCREEN_INTRO;
+                            ChangeState(SCREEN_INTRO);
                             introTimer = 0.0f;
                         }
                     }
@@ -2179,7 +2420,7 @@ int main(void) {
         }
         else if (currentScreen == SCREEN_GAMEOVER || currentScreen == SCREEN_VICTORY) {
             if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_R) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-                currentScreen = SCREEN_NEXUS;
+                ChangeState(SCREEN_NEXUS);
             }
         }
         else if (currentScreen == SCREEN_ROOM_TRANSITION) {
@@ -2194,7 +2435,7 @@ int main(void) {
                 currentRoomX = nextRoomX;
                 currentRoomY = nextRoomY;
                 player.position = transitionPlayerEnd;
-                currentScreen = SCREEN_GAMEPLAY;
+                ChangeState(SCREEN_GAMEPLAY);
             } else {
                 player.position = Vector3Lerp(transitionPlayerStart, transitionPlayerEnd, transitionTimer);
             }
@@ -2402,7 +2643,7 @@ int main(void) {
                             player.stateTimer = 0.15f;
                             screenShake = 0.2f;
                             SpawnParticles(player.position, RED, 5);
-                            if (playerHalfHeartsHealth <= 0) currentScreen = SCREEN_GAMEOVER;
+                            if (playerHalfHeartsHealth <= 0) ChangeState(SCREEN_GAMEOVER);
                         }
                     }
                 }
@@ -2500,7 +2741,7 @@ int main(void) {
                     transitionPlayerStart = player.position;
                     transitionPlayerEnd = (Vector3){ 0.0f, 1.0f, 8.8f };
                     transitionTimer = 0.0f;
-                    currentScreen = SCREEN_ROOM_TRANSITION;
+                    ChangeState(SCREEN_ROOM_TRANSITION);
                     for (int i = 0; i < MAX_PROJECTILES; i++) projectiles[i].active = false;
                 } else player.position.z = wallTop;
             }
@@ -2511,7 +2752,7 @@ int main(void) {
                     transitionPlayerStart = player.position;
                     transitionPlayerEnd = (Vector3){ 0.0f, 1.0f, -8.8f };
                     transitionTimer = 0.0f;
-                    currentScreen = SCREEN_ROOM_TRANSITION;
+                    ChangeState(SCREEN_ROOM_TRANSITION);
                     for (int i = 0; i < MAX_PROJECTILES; i++) projectiles[i].active = false;
                 } else player.position.z = wallBottom;
             }
@@ -2522,7 +2763,7 @@ int main(void) {
                     transitionPlayerStart = player.position;
                     transitionPlayerEnd = (Vector3){ 8.8f, 1.0f, 0.0f };
                     transitionTimer = 0.0f;
-                    currentScreen = SCREEN_ROOM_TRANSITION;
+                    ChangeState(SCREEN_ROOM_TRANSITION);
                     for (int i = 0; i < MAX_PROJECTILES; i++) projectiles[i].active = false;
                 } else player.position.x = wallLeft;
             }
@@ -2533,7 +2774,7 @@ int main(void) {
                     transitionPlayerStart = player.position;
                     transitionPlayerEnd = (Vector3){ -8.8f, 1.0f, 0.0f };
                     transitionTimer = 0.0f;
-                    currentScreen = SCREEN_ROOM_TRANSITION;
+                    ChangeState(SCREEN_ROOM_TRANSITION);
                     for (int i = 0; i < MAX_PROJECTILES; i++) projectiles[i].active = false;
                 } else player.position.x = wallRight;
             }
@@ -2543,9 +2784,11 @@ int main(void) {
                 float dx = player.position.x;
                 float dz = player.position.z;
                 if (dx * dx + dz * dz < 1.0f) {
-                    currentScreen = SCREEN_VICTORY;
+                    ChangeState(SCREEN_VICTORY);
                 }
             }
+            
+            ResolveTileCollisions(player.position, player.radius, currentRoom);
             
             // Pillars collisions
             for (int i = 0; i < currentRoom.numPillars; i++) {
@@ -2577,7 +2820,7 @@ int main(void) {
                         screenShake = 0.15f;
                         SpawnParticles(player.position, PURPLE, 6);
                         
-                        if (playerHalfHeartsHealth <= 0) currentScreen = SCREEN_GAMEOVER;
+                        if (playerHalfHeartsHealth <= 0) ChangeState(SCREEN_GAMEOVER);
                     }
                 }
             }
@@ -2847,7 +3090,7 @@ int main(void) {
                             playerHalfHeartsHealth -= kamDmg;
                             player.state = STATE_HURT;
                             player.stateTimer = 0.28f;
-                            if (playerHalfHeartsHealth <= 0) currentScreen = SCREEN_GAMEOVER;
+                            if (playerHalfHeartsHealth <= 0) ChangeState(SCREEN_GAMEOVER);
                         }
                         continue;
                     }
@@ -2967,7 +3210,7 @@ int main(void) {
                         screenShake = 0.35f;
                         SpawnParticles(player.position, RED, 10);
                         
-                        if (playerHalfHeartsHealth <= 0) currentScreen = SCREEN_GAMEOVER;
+                        if (playerHalfHeartsHealth <= 0) ChangeState(SCREEN_GAMEOVER);
                     }
                 }
             }
@@ -2993,7 +3236,7 @@ int main(void) {
                         screenShake = 0.25f;
                         SpawnParticles(player.position, LIME, 10);
                         
-                        if (playerHalfHeartsHealth <= 0) currentScreen = SCREEN_GAMEOVER;
+                        if (playerHalfHeartsHealth <= 0) ChangeState(SCREEN_GAMEOVER);
                     }
                 } else {
                     // Player tear/acid vs Enemy
@@ -3186,7 +3429,7 @@ int main(void) {
             // Centralized player death check
             if (playerHalfHeartsHealth <= 0) {
                 playerHalfHeartsHealth = 0;
-                currentScreen = SCREEN_GAMEOVER;
+                ChangeState(SCREEN_GAMEOVER);
                 currentClone.cloneIndex++;
                 currentClone.memoryCoherence -= 15.0f;
                 if (currentClone.memoryCoherence < 0.0f) currentClone.memoryCoherence = 0.0f;
@@ -3346,6 +3589,42 @@ int main(void) {
                         Vector3 starPos = { driftX, spaceStars[i].position.y, driftZ };
                         DrawBillboardRec(camera, charSpritesheet, (Rectangle){ 96.0f, 192.0f, 32.0f, 32.0f }, starPos, (Vector2){ spaceStars[i].size, spaceStars[i].size }, spaceStars[i].color);
                     }
+                    
+                    // A.5 Planet in the background viewport
+                    float planetOrbitTime = (float)GetTime() * 0.05f;
+                    Vector3 planetPos = { 
+                        cosf(planetOrbitTime) * 15.0f, 
+                        -5.0f, 
+                        -45.0f + sinf(planetOrbitTime) * 5.0f 
+                    };
+                    
+                    // Base color based on atmospheric tint (darkened)
+                    Color baseColor = { 
+                        (unsigned char)(currentPlanet.atmosphericTint.r / 2),
+                        (unsigned char)(currentPlanet.atmosphericTint.g / 2),
+                        (unsigned char)(currentPlanet.atmosphericTint.b / 2),
+                        255 
+                    };
+                    
+                    // Draw Planet Core
+                    DrawSphere(planetPos, 18.0f, baseColor);
+                    
+                    // Draw Atmosphere Glow (Additive-like overlay)
+                    rlDisableDepthMask();
+                    for (int i = 0; i < 3; i++) {
+                        DrawSphere(planetPos, 18.2f + (float)i * 0.4f, Fade(currentPlanet.atmosphericTint, 0.3f - (float)i * 0.1f));
+                    }
+                    
+                    // Draw Rings if hazard is high
+                    if (currentPlanet.hazardIntensity > 0.5f) {
+                        rlPushMatrix();
+                            rlTranslatef(planetPos.x, planetPos.y, planetPos.z);
+                            rlRotatef(25.0f, 1.0f, 0.0f, 1.0f);
+                            DrawCylinderWires((Vector3){0,0,0}, 28.0f, 28.0f, 0.1f, 32, Fade(baseColor, 0.5f));
+                            DrawCylinderWires((Vector3){0,0,0}, 32.0f, 32.0f, 0.1f, 32, Fade(WHITE, 0.2f));
+                        rlPopMatrix();
+                    }
+                    rlEnableDepthMask();
                     
                     // B. Spaceship cockpit floor grid (metallic grey compartments)
                     for (int z = -6; z <= 6; z++) {
@@ -4095,9 +4374,7 @@ int main(void) {
                             float px = (float)(x - 10);
                             float pz = (float)(z - 10);
                             
-                            bool isBorder = (x == 0 || x == 20 || z == 0 || z == 20);
-                            
-                            if (isBorder) {
+                            if (room.wallTileVariants[z][x] >= 0) {
                                 bool isDoorway = false;
                                 if (z == 0 && x == 10 && room.doors[0]) isDoorway = true;
                                 if (z == 20 && x == 10 && room.doors[1]) isDoorway = true;
@@ -4320,6 +4597,50 @@ int main(void) {
                     
                 EndMode3D();
                 
+                // --- 2D DYNAMIC LIGHTING PASS ---
+                if (GetCurrentState() == SCREEN_GAMEPLAY) {
+                    if (useRenderTarget) EndTextureMode();
+                    
+                    BeginTextureMode(lightMap);
+                    ClearBackground((Color){ 10, 10, 15, 255 }); // Dark ambient base
+                    
+                    BeginBlendMode(BLEND_ADDITIVE);
+                    
+                    // Player Light
+                    Vector2 playerScreenPos = GetWorldToScreen(player.position, camera);
+                    DrawCircleGradient(playerScreenPos.x, playerScreenPos.y, 250.0f, Fade(YELLOW, 0.45f), BLANK);
+                    
+                    // Projectile Lights
+                    for (int i = 0; i < MAX_PROJECTILES; i++) {
+                        if (projectiles[i].active) {
+                            Vector2 projScreenPos = GetWorldToScreen(projectiles[i].position, camera);
+                            Color lightCol = projectiles[i].isAcid ? GREEN : (projectiles[i].isEnemy ? RED : CYAN);
+                            DrawCircleGradient(projScreenPos.x, projScreenPos.y, 110.0f, Fade(lightCol, 0.65f), BLANK);
+                        }
+                    }
+                    
+                    // Particle Lights
+                    for (int i = 0; i < MAX_PARTICLES; i++) {
+                        if (particles[i].active && !particles[i].isAtmospheric && !particles[i].isGas) {
+                            Vector2 partScreenPos = GetWorldToScreen(particles[i].position, camera);
+                            DrawCircleGradient(partScreenPos.x, partScreenPos.y, 50.0f, Fade(particles[i].color, 0.5f), BLANK);
+                        }
+                    }
+                    
+                    EndBlendMode();
+                    EndTextureMode();
+                    
+                    if (useRenderTarget) BeginTextureMode(targetTex);
+                    
+                    // Apply Lightmap via Multiplicative Blending
+                    BeginBlendMode(BLEND_MULTIPLIED);
+                    DrawTexturePro(lightMap.texture, 
+                                   (Rectangle){ 0.0f, 0.0f, (float)lightMap.texture.width, (float)-lightMap.texture.height },
+                                   (Rectangle){ 0.0f, 0.0f, (float)screenWidth, (float)screenHeight },
+                                   (Vector2){ 0.0f, 0.0f }, 0.0f, WHITE);
+                    EndBlendMode();
+                }
+                
                 // --- 2D OVERLAYS & HUD UI ---
                 if (currentPlanet.hazard != HAZARD_NONE) {
                     DrawRectangle(0, 0, screenWidth, screenHeight, currentPlanet.atmosphericTint);
@@ -4505,6 +4826,7 @@ int main(void) {
     UnloadShader(nebulaShader);
     UnloadShader(tachyonShader);
     UnloadRenderTexture(targetTex);
+    UnloadRenderTexture(lightMap);
     
     CloseWindow();
     return 0;
