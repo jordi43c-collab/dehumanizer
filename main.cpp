@@ -218,6 +218,32 @@ void DrawWallBlock(Texture2D texture, Rectangle source, Vector3 position, Vector
     rlSetTexture(0);
 }
 
+void DrawExtrudedBillboardRec(Camera3D camera, Texture2D texture, Rectangle source, Vector3 position, Vector2 size, Color tint) {
+    Vector3 camToPos = Vector3Subtract(position, camera.position);
+    Vector3 depthDir = { camToPos.x, 0.0f, camToPos.z };
+    if (Vector3Length(depthDir) > 0.1f) {
+        depthDir = Vector3Normalize(depthDir);
+    } else {
+        depthDir = (Vector3){ 0.0f, 0.0f, -1.0f };
+    }
+    
+    int slices = 6;
+    float spacing = 0.02f;
+    for (int s = 0; s < slices; s++) {
+        float offset = (float)(s - slices / 2) * spacing;
+        Vector3 slicePos = Vector3Add(position, Vector3Scale(depthDir, offset));
+        
+        Color sliceTint = tint;
+        if (s < slices - 1) {
+            float factor = 0.45f + (float)s * (0.45f / (float)(slices - 1)); // range 0.45 to 0.9
+            sliceTint.r = (unsigned char)(sliceTint.r * factor);
+            sliceTint.g = (unsigned char)(sliceTint.g * factor);
+            sliceTint.b = (unsigned char)(sliceTint.b * factor);
+        }
+        DrawBillboardRec(camera, texture, source, slicePos, size, sliceTint);
+    }
+}
+
 // Enums & Structs
 Vector3 GetMouseGroundIntersection(Camera3D camera);
 void SpawnParticles(Vector3 pos, Color color, int count, bool isGas = false);
@@ -438,6 +464,7 @@ struct Projectile {
     bool hasPiercing;
     bool hasRefraction;
     int pierceCount;
+    float life; // Remaining lifetime in seconds
 };
 
 struct Particle {
@@ -2055,7 +2082,7 @@ void AddBillboardToRender(Vector3 pos, Texture2D tex, Rectangle src, Vector2 sz,
     if (layer == 1 && dist > 0.1f) {
         // Shift characters and dynamic objects slightly towards the camera to prevent them leaning back into walls/pillars
         Vector3 dir = Vector3Scale(camToPos, 1.0f / dist);
-        renderPos = Vector3Subtract(pos, Vector3Scale(dir, 0.38f));
+        renderPos = Vector3Subtract(pos, Vector3Scale(dir, 0.45f));
     }
     
     float depth = dist + depthOffset;
@@ -3096,6 +3123,7 @@ int main(void) {
                                 projectiles[i].hasPiercing = false;
                                 projectiles[i].hasRefraction = false;
                                 projectiles[i].pierceCount = 0;
+                                projectiles[i].life = 0.40f; // limited range for player projectiles
                                 break;
                             }
                         }
@@ -3139,10 +3167,11 @@ int main(void) {
                                 projectiles[i].isEnemy = false;
                                 projectiles[i].isAcid = hasAcidGlands;
                                 
-                                projectiles[i].hasBounce = player.activeWeapon.projectileSlot.hasBounce;
+                                projectiles[i].hasBounce = false;
                                 projectiles[i].hasPiercing = player.activeWeapon.modifierSlot.hasPiercing;
                                 projectiles[i].hasRefraction = motherShip.armory.hasQuantumTech;
                                 projectiles[i].pierceCount = player.activeWeapon.modifierSlot.hasPiercing ? 3 : 0;
+                                projectiles[i].life = 0.40f;
                                 
                                 break;
                             }
@@ -3162,6 +3191,14 @@ int main(void) {
             // --- UPDATE PROJECTILES ---
             for (int i = 0; i < MAX_PROJECTILES; i++) {
                 if (projectiles[i].active) {
+                    // Update projectile range lifetime
+                    projectiles[i].life -= dt;
+                    if (projectiles[i].life <= 0.0f) {
+                        projectiles[i].active = false;
+                        SpawnImpact(projectiles[i].position);
+                        continue;
+                    }
+                    
                     if (!projectiles[i].isEnemy && currentPlanet.gravityMultiplier != 1.0f) {
                         projectiles[i].position.y -= (currentPlanet.gravityMultiplier - 1.0f) * 1.5f * dt;
                     }
@@ -3350,6 +3387,7 @@ int main(void) {
                                         projectiles[i].active = true;
                                         projectiles[i].isEnemy = true;
                                         projectiles[i].isAcid = false;
+                                        projectiles[i].life = 1.5f; // sentry projectiles have standard range
                                         break;
                                     }
                                 }
@@ -4002,11 +4040,11 @@ int main(void) {
                     // E. Draw NPC Billboards
                     // Scientist (Row 3, Column 0)
                     Rectangle sciSrc = { 0.0f, 3.0f * 32.0f, 32.0f, 32.0f };
-                    DrawBillboardRec(camera, charSpritesheet, sciSrc, (Vector3){ sciNPC_Pos.x, sciNPC_Pos.y - 0.2f, sciNPC_Pos.z }, (Vector2){ 1.8f, 1.8f }, WHITE);
+                    DrawExtrudedBillboardRec(camera, charSpritesheet, sciSrc, (Vector3){ sciNPC_Pos.x, sciNPC_Pos.y - 0.2f, sciNPC_Pos.z }, (Vector2){ 1.8f, 1.8f }, WHITE);
                     
                     // Soldier (Row 4, Column 0)
                     Rectangle soldSrc = { 0.0f, 4.0f * 32.0f, 32.0f, 32.0f };
-                    DrawBillboardRec(camera, charSpritesheet, soldSrc, (Vector3){ soldNPC_Pos.x, soldNPC_Pos.y - 0.2f, soldNPC_Pos.z }, (Vector2){ 1.8f, 1.8f }, WHITE);
+                    DrawExtrudedBillboardRec(camera, charSpritesheet, soldSrc, (Vector3){ soldNPC_Pos.x, soldNPC_Pos.y - 0.2f, soldNPC_Pos.z }, (Vector2){ 1.8f, 1.8f }, WHITE);
                     
                     // F. Draw Player Clone Avatar
                     if (player.health > 0.0f || playerHalfHeartsHealth > 0) {
@@ -4015,9 +4053,9 @@ int main(void) {
                         int legRow = (player.direction.z < 0.0f) ? 2 : 1;
                         Rectangle legSrc = { (float)player.animFrame * 32.0f, (float)legRow * 32.0f, 32.0f, 32.0f };
                         Vector3 legPos = { player.position.x, player.position.y - 0.2f, player.position.z };
-                        DrawBillboardRec(camera, charSpritesheet, legSrc, legPos, (Vector2){ 1.8f, 1.8f }, pColor);
+                        DrawExtrudedBillboardRec(camera, charSpritesheet, legSrc, legPos, (Vector2){ 1.8f, 1.8f }, pColor);
                         
-                        // Head
+                        // Head (shifted slightly towards the camera to prevent clipping)
                         int headState = HEAD_LOOK_DOWN;
                         bool flipHead = (player.direction.x > 0.0f);
                         if (player.direction.z < -0.5f) {
@@ -4033,8 +4071,20 @@ int main(void) {
                             flipHead ? -32.0f : 32.0f,
                             32.0f 
                         };
-                        Vector3 headPos = { player.position.x, player.position.y + 0.6f, player.position.z };
-                        DrawBillboardRec(camera, charSpritesheet, headSrc, headPos, (Vector2){ 1.8f, 1.8f }, pColor);
+                        
+                        Vector3 camToPos = Vector3Subtract(player.position, camera.position);
+                        Vector3 depthDir = { camToPos.x, 0.0f, camToPos.z };
+                        if (Vector3Length(depthDir) > 0.1f) {
+                            depthDir = Vector3Normalize(depthDir);
+                        } else {
+                            depthDir = (Vector3){ 0.0f, 0.0f, -1.0f };
+                        }
+                        Vector3 headPos = { 
+                            player.position.x - depthDir.x * 0.15f, 
+                            player.position.y + 0.6f, 
+                            player.position.z - depthDir.z * 0.15f 
+                        };
+                        DrawExtrudedBillboardRec(camera, charSpritesheet, headSrc, headPos, (Vector2){ 1.8f, 1.8f }, pColor);
                     }
                     
                     // G. Draw Sparks Particles inside cockpit
@@ -4917,7 +4967,18 @@ int main(void) {
                             flipHead ? -32.0f : 32.0f,
                             32.0f 
                         };
-                        Vector3 headPos = { player.position.x, player.position.y + 0.6f, player.position.z };
+                        Vector3 camToPos = Vector3Subtract(player.position, camera.position);
+                        Vector3 depthDir = { camToPos.x, 0.0f, camToPos.z };
+                        if (Vector3Length(depthDir) > 0.1f) {
+                            depthDir = Vector3Normalize(depthDir);
+                        } else {
+                            depthDir = (Vector3){ 0.0f, 0.0f, -1.0f };
+                        }
+                        Vector3 headPos = { 
+                            player.position.x - depthDir.x * 0.15f, 
+                            player.position.y + 0.6f, 
+                            player.position.z - depthDir.z * 0.15f 
+                        };
                         AddBillboardToRender(headPos, charSpritesheet, headSrc, (Vector2){ 1.8f, 1.8f }, tint, 1, camera, -0.01f);
                     }
                     
@@ -4927,7 +4988,11 @@ int main(void) {
                     // Draw sorted buffer (100% clean transparency overlaps!)
                     rlDisableDepthMask();
                     for (int i = 0; i < billCount; i++) {
-                        DrawBillboardRec(camera, billBuffer[i].texture, billBuffer[i].source, billBuffer[i].position, billBuffer[i].size, billBuffer[i].tint);
+                        if (billBuffer[i].layer == 1 && billBuffer[i].source.y < 192.0f) {
+                            DrawExtrudedBillboardRec(camera, billBuffer[i].texture, billBuffer[i].source, billBuffer[i].position, billBuffer[i].size, billBuffer[i].tint);
+                        } else {
+                            DrawBillboardRec(camera, billBuffer[i].texture, billBuffer[i].source, billBuffer[i].position, billBuffer[i].size, billBuffer[i].tint);
+                        }
                     }
                     rlEnableDepthMask();
                     
