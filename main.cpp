@@ -23,17 +23,18 @@ void DrawFloorTile(Texture2D texture, Rectangle source, Vector3 position, Vector
     float v1 = (source.y + source.height) / (float)texture.height;
 
     // Helper for deterministic vertex displacement (uneven ground height)
-    auto GetFloorOffset = [](float px, float py, float pz, int vertIdx) -> float {
-        int h = (int)(px * 50249) ^ (int)(py * 70237) ^ (int)(pz * 80177) ^ (vertIdx * 53);
-        h = (h ^ (h >> 16)) * 0x85ebca6b;
-        h ^= (h >> 16);
-        return (float)(h % 200 - 100) * 0.001f * 0.08f; // Bumpy height deviation (-0.08 to +0.08)
+    // Uses absolute vertex coordinates to ensure seamless stitching between tiles
+    auto GetFloorOffset = [](float vx, float vz) -> float {
+        float h = sinf(vx * 2.2f) * cosf(vz * 2.2f) * 0.12f +
+                  sinf(vx * 4.5f + vz * 3.1f) * 0.04f +
+                  cosf(vx * 1.1f - vz * 1.8f) * 0.06f;
+        return h;
     };
     
-    float oy0 = GetFloorOffset(x, y, z, 0);
-    float oy1 = GetFloorOffset(x, y, z, 1);
-    float oy2 = GetFloorOffset(x, y, z, 2);
-    float oy3 = GetFloorOffset(x, y, z, 3);
+    float oy0 = GetFloorOffset(x - hw, z - hd);
+    float oy1 = GetFloorOffset(x - hw, z + hd);
+    float oy2 = GetFloorOffset(x + hw, z + hd);
+    float oy3 = GetFloorOffset(x + hw, z - hd);
     
     rlSetTexture(texture.id);
     rlBegin(RL_QUADS);
@@ -71,7 +72,7 @@ void DrawFloorTile(Texture2D texture, Rectangle source, Vector3 position, Vector
         float sx_hw = sw / 2.0f;
         float sy_hh = sh / 2.0f;
         float sz_hd = sd / 2.0f;
-        float py = y + (oy0 + oy1 + oy2 + oy3)/4.0f + sy_hh; // place it on the bumpy surface!
+        float py = y + GetFloorOffset(x + px, z + pz) + sy_hh; // place it on the bumpy surface!
         
         rlBegin(RL_QUADS);
             rlColor4ub(stoneTint.r, stoneTint.g, stoneTint.b, stoneTint.a);
@@ -122,14 +123,12 @@ void DrawWallBlock(Texture2D texture, Rectangle source, Vector3 position, Vector
     float v1 = (source.y + source.height) / (float)texture.height;
 
     // Helper for deterministic vertex displacement (creates chiseled rocky relief)
-    auto GetOffset = [](float px, float py, float pz, int vertIdx, float amt) -> Vector3 {
-        int h = (int)(px * 73856093) ^ (int)(py * 19349663) ^ (int)(pz * 83492791) ^ (vertIdx * 101);
-        h = (h ^ (h >> 16)) * 0x85ebca6b;
-        h = (h ^ (h >> 13)) * 0xc2b2ae35;
-        h ^= (h >> 16);
-        float dx = (float)(h % 200 - 100) * 0.001f * amt;
-        float dy = (float)((h / 2) % 200 - 100) * 0.001f * amt;
-        float dz = (float)((h / 4) % 200 - 100) * 0.001f * amt;
+    // Uses absolute vertex coordinates to ensure seamless stitching between blocks
+    auto GetOffset = [](float vx, float vy, float vz) -> Vector3 {
+        float scale = 0.18f; // intensity of relief
+        float dx = sinf(vx * 2.5f + vy) * cosf(vz * 2.0f) * scale;
+        float dy = sinf(vy * 3.0f) * cosf(vx * 1.5f) * scale * 0.5f;
+        float dz = cosf(vx * 2.5f) * sinf(vy + vz * 2.0f) * scale;
         return (Vector3){ dx, dy, dz };
     };
     
@@ -139,10 +138,10 @@ void DrawWallBlock(Texture2D texture, Rectangle source, Vector3 position, Vector
         
         // Front Face (Facing South: +z)
         {
-            Vector3 o0 = GetOffset(x, y, z, 0, 0.12f);
-            Vector3 o1 = GetOffset(x, y, z, 1, 0.12f);
-            Vector3 o2 = GetOffset(x, y, z, 2, 0.12f);
-            Vector3 o3 = GetOffset(x, y, z, 3, 0.12f);
+            Vector3 o0 = GetOffset(x - hw, y - hh, z + hd);
+            Vector3 o1 = GetOffset(x + hw, y - hh, z + hd);
+            Vector3 o2 = GetOffset(x + hw, y + hh, z + hd);
+            Vector3 o3 = GetOffset(x - hw, y + hh, z + hd);
             rlNormal3f(0.0f, 0.0f, 1.0f);
             rlTexCoord2f(u0, v0); rlVertex3f(x - hw + o0.x, y - hh + o0.y, z + hd + o0.z);
             rlTexCoord2f(u1, v0); rlVertex3f(x + hw + o1.x, y - hh + o1.y, z + hd + o1.z);
@@ -152,10 +151,10 @@ void DrawWallBlock(Texture2D texture, Rectangle source, Vector3 position, Vector
         
         // Back Face (Facing North: -z)
         {
-            Vector3 o0 = GetOffset(x, y, z, 4, 0.12f);
-            Vector3 o1 = GetOffset(x, y, z, 5, 0.12f);
-            Vector3 o2 = GetOffset(x, y, z, 6, 0.12f);
-            Vector3 o3 = GetOffset(x, y, z, 7, 0.12f);
+            Vector3 o0 = GetOffset(x - hw, y - hh, z - hd);
+            Vector3 o1 = GetOffset(x - hw, y + hh, z - hd);
+            Vector3 o2 = GetOffset(x + hw, y + hh, z - hd);
+            Vector3 o3 = GetOffset(x + hw, y - hh, z - hd);
             rlNormal3f(0.0f, 0.0f, -1.0f);
             rlTexCoord2f(u1, v0); rlVertex3f(x - hw + o0.x, y - hh + o0.y, z - hd + o0.z);
             rlTexCoord2f(u1, v1); rlVertex3f(x - hw + o1.x, y + hh + o1.y, z - hd + o1.z);
@@ -165,10 +164,10 @@ void DrawWallBlock(Texture2D texture, Rectangle source, Vector3 position, Vector
         
         // Left Face (Facing West: -x)
         {
-            Vector3 o0 = GetOffset(x, y, z, 8, 0.12f);
-            Vector3 o1 = GetOffset(x, y, z, 9, 0.12f);
-            Vector3 o2 = GetOffset(x, y, z, 10, 0.12f);
-            Vector3 o3 = GetOffset(x, y, z, 11, 0.12f);
+            Vector3 o0 = GetOffset(x - hw, y - hh, z - hd);
+            Vector3 o1 = GetOffset(x - hw, y - hh, z + hd);
+            Vector3 o2 = GetOffset(x - hw, y + hh, z + hd);
+            Vector3 o3 = GetOffset(x - hw, y + hh, z - hd);
             rlNormal3f(-1.0f, 0.0f, 0.0f);
             rlTexCoord2f(u0, v0); rlVertex3f(x - hw + o0.x, y - hh + o0.y, z - hd + o0.z);
             rlTexCoord2f(u1, v0); rlVertex3f(x - hw + o1.x, y - hh + o1.y, z + hd + o1.z);
@@ -178,10 +177,10 @@ void DrawWallBlock(Texture2D texture, Rectangle source, Vector3 position, Vector
         
         // Right Face (Facing East: +x)
         {
-            Vector3 o0 = GetOffset(x, y, z, 12, 0.12f);
-            Vector3 o1 = GetOffset(x, y, z, 13, 0.12f);
-            Vector3 o2 = GetOffset(x, y, z, 14, 0.12f);
-            Vector3 o3 = GetOffset(x, y, z, 15, 0.12f);
+            Vector3 o0 = GetOffset(x + hw, y - hh, z - hd);
+            Vector3 o1 = GetOffset(x + hw, y + hh, z - hd);
+            Vector3 o2 = GetOffset(x + hw, y + hh, z + hd);
+            Vector3 o3 = GetOffset(x + hw, y - hh, z + hd);
             rlNormal3f(1.0f, 0.0f, 0.0f);
             rlTexCoord2f(u1, v0); rlVertex3f(x + hw + o0.x, y - hh + o0.y, z - hd + o0.z);
             rlTexCoord2f(u1, v1); rlVertex3f(x + hw + o1.x, y + hh + o1.y, z - hd + o1.z);
@@ -191,10 +190,10 @@ void DrawWallBlock(Texture2D texture, Rectangle source, Vector3 position, Vector
         
         // Top Face (Facing Up: +y)
         {
-            Vector3 o0 = GetOffset(x, y, z, 16, 0.12f);
-            Vector3 o1 = GetOffset(x, y, z, 17, 0.12f);
-            Vector3 o2 = GetOffset(x, y, z, 18, 0.12f);
-            Vector3 o3 = GetOffset(x, y, z, 19, 0.12f);
+            Vector3 o0 = GetOffset(x - hw, y + hh, z - hd);
+            Vector3 o1 = GetOffset(x - hw, y + hh, z + hd);
+            Vector3 o2 = GetOffset(x + hw, y + hh, z + hd);
+            Vector3 o3 = GetOffset(x + hw, y + hh, z - hd);
             rlNormal3f(0.0f, 1.0f, 0.0f);
             rlTexCoord2f(u0, v0); rlVertex3f(x - hw + o0.x, y + hh + o0.y, z - hd + o0.z);
             rlTexCoord2f(u0, v1); rlVertex3f(x - hw + o1.x, y + hh + o1.y, z + hd + o1.z);
@@ -204,10 +203,10 @@ void DrawWallBlock(Texture2D texture, Rectangle source, Vector3 position, Vector
         
         // Bottom Face (Facing Down: -y)
         {
-            Vector3 o0 = GetOffset(x, y, z, 20, 0.12f);
-            Vector3 o1 = GetOffset(x, y, z, 21, 0.12f);
-            Vector3 o2 = GetOffset(x, y, z, 22, 0.12f);
-            Vector3 o3 = GetOffset(x, y, z, 23, 0.12f);
+            Vector3 o0 = GetOffset(x - hw, y - hh, z - hd);
+            Vector3 o1 = GetOffset(x - hw, y - hh, z + hd);
+            Vector3 o2 = GetOffset(x + hw, y - hh, z + hd);
+            Vector3 o3 = GetOffset(x + hw, y - hh, z - hd);
             rlNormal3f(0.0f, -1.0f, 0.0f);
             rlTexCoord2f(u1, v0); rlVertex3f(x - hw + o0.x, y - hh + o0.y, z - hd + o0.z);
             rlTexCoord2f(u0, v0); rlVertex3f(x + hw + o3.x, y - hh + o3.y, z - hd + o3.z);
@@ -215,68 +214,6 @@ void DrawWallBlock(Texture2D texture, Rectangle source, Vector3 position, Vector
             rlTexCoord2f(u1, v1); rlVertex3f(x - hw + o1.x, y - hh + o1.y, z + hd + o1.z);
         }
     rlEnd();
-
-    // D. Rocky protrusions (random chiseled stones sticking out of the block faces)
-    int protrusions = 2;
-    for (int p = 0; p < protrusions; p++) {
-        int h = (int)(x * 73856093) ^ (int)(y * 19349663) ^ (int)(z * 83492791) ^ (p * 557);
-        h = (h ^ (h >> 16)) * 0x85ebca6b;
-        h ^= (h >> 16);
-
-        float px = (float)(h % 100 - 50) * 0.01f * (hw * 0.7f);
-        float py = (float)((h / 3) % 100 - 50) * 0.01f * (hh * 0.7f);
-        float pz = (float)((h / 5) % 100 - 50) * 0.01f * (hd * 0.7f);
-
-        float pw = (0.25f + (float)(h % 4) * 0.08f) * size.x;
-        float ph = (0.25f + (float)((h / 2) % 4) * 0.08f) * size.y;
-        float pd = (0.25f + (float)((h / 3) % 4) * 0.08f) * size.z;
-
-        Color pTint = tint;
-        if (h % 2 == 0) {
-            pTint.r = (unsigned char)(tint.r * 0.75f);
-            pTint.g = (unsigned char)(tint.g * 0.75f);
-            pTint.b = (unsigned char)(tint.b * 0.75f);
-        } else {
-            pTint.r = (unsigned char)(fminf(255.0f, tint.r * 1.2f));
-            pTint.g = (unsigned char)(fminf(255.0f, tint.g * 1.2f));
-            pTint.b = (unsigned char)(fminf(255.0f, tint.b * 1.2f));
-        }
-
-        float px_hw = pw / 2.0f;
-        float py_hh = ph / 2.0f;
-        float pz_hd = pd / 2.0f;
-
-        rlBegin(RL_QUADS);
-            rlColor4ub(pTint.r, pTint.g, pTint.b, pTint.a);
-            // Front face (+z offset)
-            rlNormal3f(0.0f, 0.0f, 1.0f);
-            rlTexCoord2f(u0, v0); rlVertex3f(x + px - px_hw, y + py - py_hh, z + pz + pz_hd + 0.04f);
-            rlTexCoord2f(u1, v0); rlVertex3f(x + px + px_hw, y + py - py_hh, z + pz + pz_hd + 0.04f);
-            rlTexCoord2f(u1, v1); rlVertex3f(x + px + px_hw, y + py + py_hh, z + pz + pz_hd + 0.04f);
-            rlTexCoord2f(u0, v1); rlVertex3f(x + px - px_hw, y + py + py_hh, z + pz + pz_hd + 0.04f);
-
-            // Left face (-x offset)
-            rlNormal3f(-1.0f, 0.0f, 0.0f);
-            rlTexCoord2f(u0, v0); rlVertex3f(x + px - px_hw - 0.04f, y + py - py_hh, z + pz - pz_hd);
-            rlTexCoord2f(u1, v0); rlVertex3f(x + px - px_hw - 0.04f, y + py - py_hh, z + pz + pz_hd);
-            rlTexCoord2f(u1, v1); rlVertex3f(x + px - px_hw - 0.04f, y + py + py_hh, z + pz + pz_hd);
-            rlTexCoord2f(u0, v1); rlVertex3f(x + px - px_hw - 0.04f, y + py + py_hh, z + pz - pz_hd);
-
-            // Right face (+x offset)
-            rlNormal3f(1.0f, 0.0f, 0.0f);
-            rlTexCoord2f(u1, v0); rlVertex3f(x + px + px_hw + 0.04f, y + py - py_hh, z + pz - pz_hd);
-            rlTexCoord2f(u1, v1); rlVertex3f(x + px + px_hw + 0.04f, y + py + py_hh, z + pz - pz_hd);
-            rlTexCoord2f(u0, v1); rlVertex3f(x + px + px_hw + 0.04f, y + py + py_hh, z + pz + pz_hd);
-            rlTexCoord2f(u0, v0); rlVertex3f(x + px + px_hw + 0.04f, y + py - py_hh, z + pz + pz_hd);
-
-            // Top face (+y offset)
-            rlNormal3f(0.0f, 1.0f, 0.0f);
-            rlTexCoord2f(u0, v0); rlVertex3f(x + px - px_hw, y + py + py_hh + 0.04f, z + pz - pz_hd);
-            rlTexCoord2f(u0, v1); rlVertex3f(x + px - px_hw, y + py + py_hh + 0.04f, z + pz + pz_hd);
-            rlTexCoord2f(u1, v1); rlVertex3f(x + px + px_hw, y + py + py_hh + 0.04f, z + pz + pz_hd);
-            rlTexCoord2f(u1, v0); rlVertex3f(x + px + px_hw, y + py + py_hh + 0.04f, z + pz - pz_hd);
-        rlEnd();
-    }
 
     rlSetTexture(0);
 }
@@ -1219,11 +1156,11 @@ Texture2D GenerateEnvironmentTileSheet() {
                         int ry = GetRandomValue(2, 28);
                         ImageDrawRectangle(&img, ox + rx, oy + ry, GetRandomValue(3, 8), GetRandomValue(2, 4), rockLight);
                     }
-                    // Auto-tiling borders (shadow at edges)
-                    ImageDrawRectangle(&img, ox, oy, 32, 2, rockDark);
-                    ImageDrawRectangle(&img, ox, oy, 2, 32, rockDark);
-                    ImageDrawRectangle(&img, ox + 30, oy, 2, 32, rockDark);
-                    ImageDrawRectangle(&img, ox, oy + 30, 32, 2, rockDark);
+                    // Auto-tiling borders (shadow at edges) - Commented out for seamless textures
+                    // ImageDrawRectangle(&img, ox, oy, 32, 2, rockDark);
+                    // ImageDrawRectangle(&img, ox, oy, 2, 32, rockDark);
+                    // ImageDrawRectangle(&img, ox + 30, oy, 2, 32, rockDark);
+                    // ImageDrawRectangle(&img, ox, oy + 30, 32, 2, rockDark);
                 }
                 else if (ty < 4) { // Natural Stone / Earth transit floors
                     ImageDrawRectangle(&img, ox, oy, 32, 32, (Color){ 54, 45, 38, 255 }); // earth base
@@ -1273,11 +1210,11 @@ Texture2D GenerateEnvironmentTileSheet() {
                         ImageDrawCircle(&img, ox + cx, oy + cy, GetRandomValue(2, 4), crystalGlow);
                         ImageDrawCircle(&img, ox + cx, oy + cy, 1, WHITE); // glowing tip
                     }
-                    // Auto-tiling borders
-                    ImageDrawRectangle(&img, ox, oy, 32, 2, crystalDark);
-                    ImageDrawRectangle(&img, ox, oy, 2, 32, crystalDark);
-                    ImageDrawRectangle(&img, ox + 30, oy, 2, 32, crystalDark);
-                    ImageDrawRectangle(&img, ox, oy + 30, 32, 2, crystalDark);
+                    // Auto-tiling borders - Commented out for seamless textures
+                    // ImageDrawRectangle(&img, ox, oy, 32, 2, crystalDark);
+                    // ImageDrawRectangle(&img, ox, oy, 2, 32, crystalDark);
+                    // ImageDrawRectangle(&img, ox + 30, oy, 2, 32, crystalDark);
+                    // ImageDrawRectangle(&img, ox, oy + 30, 32, 2, crystalDark);
                 }
                 else if (ty < 4) { // Floor
                     ImageDrawRectangle(&img, ox, oy, 32, 32, (Color){ 30, 30, 42, 255 }); // dark floor
@@ -1328,11 +1265,11 @@ Texture2D GenerateEnvironmentTileSheet() {
                     for (int c = 0; c < 3; c++) {
                         ImageDrawLine(&img, ox + GetRandomValue(0, 31), oy + GetRandomValue(0, 31), ox + GetRandomValue(0, 31), oy + GetRandomValue(0, 31), lavaDark);
                     }
-                    // Auto-tiling borders
-                    ImageDrawRectangle(&img, ox, oy, 32, 2, lavaDark);
-                    ImageDrawRectangle(&img, ox, oy, 2, 32, lavaDark);
-                    ImageDrawRectangle(&img, ox + 30, oy, 2, 32, lavaDark);
-                    ImageDrawRectangle(&img, ox, oy + 30, 32, 2, lavaDark);
+                    // Auto-tiling borders - Commented out for seamless textures
+                    // ImageDrawRectangle(&img, ox, oy, 32, 2, lavaDark);
+                    // ImageDrawRectangle(&img, ox, oy, 2, 32, lavaDark);
+                    // ImageDrawRectangle(&img, ox + 30, oy, 2, 32, lavaDark);
+                    // ImageDrawRectangle(&img, ox, oy + 30, 32, 2, lavaDark);
                 }
                 else if (ty < 4) { // Floor
                     ImageDrawRectangle(&img, ox, oy, 32, 32, lavaDark);
@@ -3924,29 +3861,54 @@ int main(void) {
                     // B. Spaceship cockpit floor grid (metallic grey compartments)
                     for (int z = -6; z <= 6; z++) {
                         for (int x = -6; x <= 6; x++) {
-                            Rectangle floorSrc = { 0.0f, 2.0f * 32.0f, 32.0f, 32.0f };
+                            // Select dynamic texture variant from Sector 0 floors (columns 0-2, rows 2-3)
+                            int h = x * 73856093 ^ z * 83492791;
+                            h = (h ^ (h >> 16)) * 0x85ebca6b;
+                            h ^= (h >> 16);
+                            h = abs(h);
+                            int localCol = h % 3;
+                            int localRow = (h / 3) % 2;
+                            Rectangle floorSrc = { (float)localCol * 32.0f, (2.0f + (float)localRow) * 32.0f, 32.0f, 32.0f };
                             DrawFloorTile(envSpritesheet, floorSrc, (Vector3){ (float)x, 0.0f, (float)z }, (Vector2){ 1.0f, 1.0f }, (Color){ 70, 75, 80, 255 });
                         }
                     }
                     
                     // C. Walls surrounding the bridge room
                     for (int x = -7; x <= 7; x++) {
-                        Rectangle wallSrc = { 0.0f, 0.0f, 32.0f, 32.0f };
+                        // Select dynamic texture variant from Sector 0 walls (columns 0-2, rows 0-1)
+                        auto GetWallSrc = [](float px, float py, float pz) -> Rectangle {
+                            int h = (int)(px * 73856093) ^ (int)(py * 19349663) ^ (int)(pz * 83492791);
+                            h = (h ^ (h >> 16)) * 0x85ebca6b;
+                            h ^= (h >> 16);
+                            h = abs(h);
+                            int localCol = h % 3;
+                            int localRow = (h / 3) % 2;
+                            return (Rectangle){ (float)localCol * 32.0f, (float)localRow * 32.0f, 32.0f, 32.0f };
+                        };
+                        
                         // Back wall (cockpit viewport)
                         if (x == -7 || x == 7) {
-                            DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ (float)x, 2.0f, -7.0f }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 45, 50, 55, 255 });
+                            DrawWallBlock(envSpritesheet, GetWallSrc((float)x, 2.0f, -7.0f), (Vector3){ (float)x, 2.0f, -7.0f }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 45, 50, 55, 255 });
                         } else {
                             // low border under front viewport window
-                            DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ (float)x, 0.5f, -7.0f }, (Vector3){ 1.0f, 1.0f, 1.0f }, (Color){ 55, 60, 65, 255 });
+                            DrawWallBlock(envSpritesheet, GetWallSrc((float)x, 0.5f, -7.0f), (Vector3){ (float)x, 0.5f, -7.0f }, (Vector3){ 1.0f, 1.0f, 1.0f }, (Color){ 55, 60, 65, 255 });
                         }
                         // Front entrance wall
-                        DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ (float)x, 2.0f, 7.0f }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 50, 55, 60, 255 });
+                        DrawWallBlock(envSpritesheet, GetWallSrc((float)x, 2.0f, 7.0f), (Vector3){ (float)x, 2.0f, 7.0f }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 50, 55, 60, 255 });
                     }
                     // Left and right walls
                     for (int z = -6; z <= 6; z++) {
-                        Rectangle wallSrc = { 0.0f, 0.0f, 32.0f, 32.0f };
-                        DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ -7.0f, 2.0f, (float)z }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 50, 55, 60, 255 });
-                        DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ 7.0f, 2.0f, (float)z }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 50, 55, 60, 255 });
+                        auto GetWallSrc = [](float px, float py, float pz) -> Rectangle {
+                            int h = (int)(px * 73856093) ^ (int)(py * 19349663) ^ (int)(pz * 83492791);
+                            h = (h ^ (h >> 16)) * 0x85ebca6b;
+                            h ^= (h >> 16);
+                            h = abs(h);
+                            int localCol = h % 3;
+                            int localRow = (h / 3) % 2;
+                            return (Rectangle){ (float)localCol * 32.0f, (float)localRow * 32.0f, 32.0f, 32.0f };
+                        };
+                        DrawWallBlock(envSpritesheet, GetWallSrc(-7.0f, 2.0f, (float)z), (Vector3){ -7.0f, 2.0f, (float)z }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 50, 55, 60, 255 });
+                        DrawWallBlock(envSpritesheet, GetWallSrc(7.0f, 2.0f, (float)z), (Vector3){ 7.0f, 2.0f, (float)z }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 50, 55, 60, 255 });
                     }
                     
                     // D. Interactive 3D modules
@@ -4723,7 +4685,22 @@ int main(void) {
                                 tileCol = 5; // Luxury gold-trim cyan trapdoor
                             }
                             
-                            Rectangle tileSrc = { (float)tileCol * 32.0f, 2.0f * 32.0f, 32.0f, 32.0f };
+                            // Dynamic coordinate-based variation for a more organic ground texture
+                            int finalCol = tileCol;
+                            int finalRow = 2;
+                            if (!(room.cleared && x == 10 && z == 10 && (room.type == ROOM_BOSS || room.type == ROOM_TREASURE))) {
+                                int colCount = (tileOffsetCol == 6) ? 2 : 3;
+                                int h = (int)px * 73856093 ^ (int)pz * 83492791;
+                                h = (h ^ (h >> 16)) * 0x85ebca6b;
+                                h ^= (h >> 16);
+                                h = abs(h);
+                                int localCol = h % colCount;
+                                int localRow = (h / colCount) % 2; // Row 2 or 3
+                                finalCol = tileOffsetCol + localCol;
+                                finalRow = 2 + localRow;
+                            }
+                            
+                            Rectangle tileSrc = { (float)finalCol * 32.0f, (float)finalRow * 32.0f, 32.0f, 32.0f };
                             DrawFloorTile(envSpritesheet, tileSrc, (Vector3){ px, 0.0f, pz }, (Vector2){ 1.0f, 1.0f }, roomTint);
                         }
                     }
@@ -4742,15 +4719,37 @@ int main(void) {
                                 if (x == 20 && z == 10 && room.doors[3]) isDoorway = true;
                                 
                                 int wallCol = tileOffsetCol + room.wallTileVariants[z][x];
-                                Rectangle wallSrc = { (float)wallCol * 32.0f, 0.0f, 32.0f, 32.0f };
+                                
+                                // Dynamic coordinate-based variation for wall tiles
+                                int finalCol = wallCol;
+                                int finalRow = 0;
+                                if (!isDoorway) {
+                                    int colCount = (tileOffsetCol == 6) ? 2 : 3;
+                                    int h = (int)px * 73856093 ^ (int)pz * 83492791;
+                                    h = (h ^ (h >> 16)) * 0x85ebca6b;
+                                    h ^= (h >> 16);
+                                    h = abs(h);
+                                    int localCol = h % colCount;
+                                    int localRow = (h / colCount) % 2; // Row 0 or 1
+                                    finalCol = tileOffsetCol + localCol;
+                                    finalRow = localRow;
+                                }
+                                Rectangle wallSrc = { (float)finalCol * 32.0f, (float)finalRow * 32.0f, 32.0f, 32.0f };
                                 
                                 if (isDoorway) {
                                     if (!room.cleared) {
                                         // locked door (red cave block!)
                                         DrawWallBlock(envSpritesheet, wallSrc, (Vector3){ px, 2.0f, pz }, (Vector3){ 1.0f, 4.0f, 1.0f }, RED);
                                     } else {
-                                        // open doorway floor tile path
-                                        Rectangle openPathSrc = { (float)tileOffsetCol * 32.0f, 2.0f * 32.0f, 32.0f, 32.0f };
+                                        // open doorway floor tile path (also varied dynamically)
+                                        int h = (int)px * 73856093 ^ (int)pz * 83492791;
+                                        h = (h ^ (h >> 16)) * 0x85ebca6b;
+                                        h ^= (h >> 16);
+                                        h = abs(h);
+                                        int colCount = (tileOffsetCol == 6) ? 2 : 3;
+                                        int openCol = tileOffsetCol + (h % colCount);
+                                        int openRow = 2 + ((h / colCount) % 2);
+                                        Rectangle openPathSrc = { (float)openCol * 32.0f, (float)openRow * 32.0f, 32.0f, 32.0f };
                                         DrawFloorTile(envSpritesheet, openPathSrc, (Vector3){ px, 0.0f, pz }, (Vector2){ 1.0f, 1.0f }, roomTint);
                                     }
                                 } else {
@@ -4761,8 +4760,16 @@ int main(void) {
                     }
                     
                     for (int i = 0; i < room.numPillars; i++) {
-                        Rectangle pillarSrc = { (float)tileOffsetCol * 32.0f, 0.0f, 32.0f, 32.0f };
-                        DrawWallBlock(envSpritesheet, pillarSrc, room.pillars[i], (Vector3){ 1.6f, 4.0f, 1.6f }, roomTint);
+                        Vector3 pos = room.pillars[i];
+                        int h = (int)pos.x * 73856093 ^ (int)pos.z * 83492791;
+                        h = (h ^ (h >> 16)) * 0x85ebca6b;
+                        h ^= (h >> 16);
+                        h = abs(h);
+                        int colCount = (tileOffsetCol == 6) ? 2 : 3;
+                        int finalCol = tileOffsetCol + (h % colCount);
+                        int finalRow = (h / colCount) % 2; // Row 0 or 1
+                        Rectangle pillarSrc = { (float)finalCol * 32.0f, (float)finalRow * 32.0f, 32.0f, 32.0f };
+                        DrawWallBlock(envSpritesheet, pillarSrc, pos, (Vector3){ 1.6f, 4.0f, 1.6f }, roomTint);
                     }
                     
                     // Render Toxic Gas clouds on the ground flat
