@@ -9,6 +9,7 @@
 #define MAX_VORTICES 16
 
 // Custom Textured 3D Quad rendering helpers for pixel-perfect alignment
+// Custom Textured 3D Quad rendering helpers for pixel-perfect alignment
 void DrawFloorTile(Texture2D texture, Rectangle source, Vector3 position, Vector2 size, Color tint) {
     float x = position.x;
     float y = position.y;
@@ -20,16 +21,90 @@ void DrawFloorTile(Texture2D texture, Rectangle source, Vector3 position, Vector
     float v0 = source.y / (float)texture.height;
     float u1 = (source.x + source.width) / (float)texture.width;
     float v1 = (source.y + source.height) / (float)texture.height;
+
+    // Helper for deterministic vertex displacement (uneven ground height)
+    auto GetFloorOffset = [](float px, float py, float pz, int vertIdx) -> float {
+        int h = (int)(px * 50249) ^ (int)(py * 70237) ^ (int)(pz * 80177) ^ (vertIdx * 53);
+        h = (h ^ (h >> 16)) * 0x85ebca6b;
+        h ^= (h >> 16);
+        return (float)(h % 200 - 100) * 0.001f * 0.08f; // Bumpy height deviation (-0.08 to +0.08)
+    };
+    
+    float oy0 = GetFloorOffset(x, y, z, 0);
+    float oy1 = GetFloorOffset(x, y, z, 1);
+    float oy2 = GetFloorOffset(x, y, z, 2);
+    float oy3 = GetFloorOffset(x, y, z, 3);
     
     rlSetTexture(texture.id);
     rlBegin(RL_QUADS);
         rlColor4ub(tint.r, tint.g, tint.b, tint.a);
         rlNormal3f(0.0f, 1.0f, 0.0f);
-        rlTexCoord2f(u0, v0); rlVertex3f(x - hw, y, z - hd);
-        rlTexCoord2f(u0, v1); rlVertex3f(x - hw, y, z + hd);
-        rlTexCoord2f(u1, v1); rlVertex3f(x + hw, y, z + hd);
-        rlTexCoord2f(u1, v0); rlVertex3f(x + hw, y, z - hd);
+        rlTexCoord2f(u0, v0); rlVertex3f(x - hw, y + oy0, z - hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x - hw, y + oy1, z + hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x + hw, y + oy2, z + hd);
+        rlTexCoord2f(u1, v0); rlVertex3f(x + hw, y + oy3, z - hd);
     rlEnd();
+
+    // Draw small 3D pebbles/rocks protruding from the floor tile
+    int pebblesCount = 2;
+    for (int i = 0; i < pebblesCount; i++) {
+        int h = (int)(x * 90177) ^ (int)(z * 60237) ^ (i * 307);
+        h = (h ^ (h >> 16)) * 0x85ebca6b;
+        h ^= (h >> 16);
+        
+        // Random offset on floor tile
+        float px = (float)(h % 100 - 50) * 0.01f * (hw * 0.8f);
+        float pz = (float)((h / 2) % 100 - 50) * 0.01f * (hd * 0.8f);
+        
+        // Random stone size (very small, like gravel/pebbles)
+        float sw = (0.05f + (float)(h % 4) * 0.02f);
+        float sh = (0.04f + (float)((h / 2) % 4) * 0.02f);
+        float sd = (0.05f + (float)((h / 3) % 4) * 0.02f);
+        
+        // Slightly darker stone color
+        Color stoneTint = tint;
+        stoneTint.r = (unsigned char)(tint.r * 0.85f);
+        stoneTint.g = (unsigned char)(tint.g * 0.85f);
+        stoneTint.b = (unsigned char)(tint.b * 0.85f);
+        
+        // Draw the pebble as a tiny 3D box
+        float sx_hw = sw / 2.0f;
+        float sy_hh = sh / 2.0f;
+        float sz_hd = sd / 2.0f;
+        float py = y + (oy0 + oy1 + oy2 + oy3)/4.0f + sy_hh; // place it on the bumpy surface!
+        
+        rlBegin(RL_QUADS);
+            rlColor4ub(stoneTint.r, stoneTint.g, stoneTint.b, stoneTint.a);
+            // Top Face
+            rlNormal3f(0.0f, 1.0f, 0.0f);
+            rlTexCoord2f(u0, v0); rlVertex3f(x + px - sx_hw, py + sy_hh, z + pz - sz_hd);
+            rlTexCoord2f(u0, v1); rlVertex3f(x + px - sx_hw, py + sy_hh, z + pz + sz_hd);
+            rlTexCoord2f(u1, v1); rlVertex3f(x + px + sx_hw, py + sy_hh, z + pz + sz_hd);
+            rlTexCoord2f(u1, v0); rlVertex3f(x + px + sx_hw, py + sy_hh, z + pz - sz_hd);
+
+            // Front Face
+            rlNormal3f(0.0f, 0.0f, 1.0f);
+            rlTexCoord2f(u0, v0); rlVertex3f(x + px - sx_hw, py - sy_hh, z + pz + sz_hd);
+            rlTexCoord2f(u1, v0); rlVertex3f(x + px + sx_hw, py - sy_hh, z + pz + sz_hd);
+            rlTexCoord2f(u1, v1); rlVertex3f(x + px + sx_hw, py + sy_hh, z + pz + sz_hd);
+            rlTexCoord2f(u0, v1); rlVertex3f(x + px - sx_hw, py + sy_hh, z + pz + sz_hd);
+
+            // Left Face
+            rlNormal3f(-1.0f, 0.0f, 0.0f);
+            rlTexCoord2f(u0, v0); rlVertex3f(x + px - sx_hw, py - sy_hh, z + pz - sz_hd);
+            rlTexCoord2f(u1, v0); rlVertex3f(x + px - sx_hw, py - sy_hh, z + pz + sz_hd);
+            rlTexCoord2f(u1, v1); rlVertex3f(x + px - sx_hw, py + sy_hh, z + pz + sz_hd);
+            rlTexCoord2f(u0, v1); rlVertex3f(x + px - sx_hw, py + sy_hh, z + pz - sz_hd);
+
+            // Right Face
+            rlNormal3f(1.0f, 0.0f, 0.0f);
+            rlTexCoord2f(u1, v0); rlVertex3f(x + px + sx_hw, py - sy_hh, z + pz - sz_hd);
+            rlTexCoord2f(u1, v1); rlVertex3f(x + px + sx_hw, py + sy_hh, z + pz - sz_hd);
+            rlTexCoord2f(u0, v1); rlVertex3f(x + px + sx_hw, py + sy_hh, z + pz + sz_hd);
+            rlTexCoord2f(u0, v0); rlVertex3f(x + px + sx_hw, py - sy_hh, z + pz + sz_hd);
+        rlEnd();
+    }
+    
     rlSetTexture(0);
 }
 
@@ -1095,6 +1170,7 @@ Texture2D GenerateProceduralSpritesheet() {
     
     CleanImageBackground(&img, BLACK);
     ExportImage(img, "spritesheet.png");
+    ExportImage(img, "../spritesheet.png");
     Texture2D tex = LoadTextureFromImage(img);
     UnloadImage(img);
     SetTextureFilter(tex, TEXTURE_FILTER_POINT);
@@ -1436,6 +1512,7 @@ Texture2D GenerateEnvironmentTileSheet() {
     
     CleanImageBackground(&img, BLACK);
     ExportImage(img, "tile_spritesheet.png");
+    ExportImage(img, "../tile_spritesheet.png");
     Texture2D tex = LoadTextureFromImage(img);
     UnloadImage(img);
     SetTextureFilter(tex, TEXTURE_FILTER_POINT);
