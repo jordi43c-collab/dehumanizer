@@ -45,53 +45,164 @@ void DrawWallBlock(Texture2D texture, Rectangle source, Vector3 position, Vector
     float v0 = source.y / (float)texture.height;
     float u1 = (source.x + source.width) / (float)texture.width;
     float v1 = (source.y + source.height) / (float)texture.height;
+
+    // Helper for deterministic vertex displacement (creates chiseled rocky relief)
+    auto GetOffset = [](float px, float py, float pz, int vertIdx, float amt) -> Vector3 {
+        int h = (int)(px * 73856093) ^ (int)(py * 19349663) ^ (int)(pz * 83492791) ^ (vertIdx * 101);
+        h = (h ^ (h >> 16)) * 0x85ebca6b;
+        h = (h ^ (h >> 13)) * 0xc2b2ae35;
+        h ^= (h >> 16);
+        float dx = (float)(h % 200 - 100) * 0.001f * amt;
+        float dy = (float)((h / 2) % 200 - 100) * 0.001f * amt;
+        float dz = (float)((h / 4) % 200 - 100) * 0.001f * amt;
+        return (Vector3){ dx, dy, dz };
+    };
     
     rlSetTexture(texture.id);
     rlBegin(RL_QUADS);
         rlColor4ub(tint.r, tint.g, tint.b, tint.a);
         
         // Front Face (Facing South: +z)
-        rlNormal3f(0.0f, 0.0f, 1.0f);
-        rlTexCoord2f(u0, v0); rlVertex3f(x - hw, y - hh, z + hd);
-        rlTexCoord2f(u1, v0); rlVertex3f(x + hw, y - hh, z + hd);
-        rlTexCoord2f(u1, v1); rlVertex3f(x + hw, y + hh, z + hd);
-        rlTexCoord2f(u0, v1); rlVertex3f(x - hw, y + hh, z + hd);
+        {
+            Vector3 o0 = GetOffset(x, y, z, 0, 0.12f);
+            Vector3 o1 = GetOffset(x, y, z, 1, 0.12f);
+            Vector3 o2 = GetOffset(x, y, z, 2, 0.12f);
+            Vector3 o3 = GetOffset(x, y, z, 3, 0.12f);
+            rlNormal3f(0.0f, 0.0f, 1.0f);
+            rlTexCoord2f(u0, v0); rlVertex3f(x - hw + o0.x, y - hh + o0.y, z + hd + o0.z);
+            rlTexCoord2f(u1, v0); rlVertex3f(x + hw + o1.x, y - hh + o1.y, z + hd + o1.z);
+            rlTexCoord2f(u1, v1); rlVertex3f(x + hw + o2.x, y + hh + o2.y, z + hd + o2.z);
+            rlTexCoord2f(u0, v1); rlVertex3f(x - hw + o3.x, y + hh + o3.y, z + hd + o3.z);
+        }
         
         // Back Face (Facing North: -z)
-        rlNormal3f(0.0f, 0.0f, -1.0f);
-        rlTexCoord2f(u1, v0); rlVertex3f(x - hw, y - hh, z - hd);
-        rlTexCoord2f(u1, v1); rlVertex3f(x - hw, y + hh, z - hd);
-        rlTexCoord2f(u0, v1); rlVertex3f(x + hw, y + hh, z - hd);
-        rlTexCoord2f(u0, v0); rlVertex3f(x + hw, y - hh, z - hd);
+        {
+            Vector3 o0 = GetOffset(x, y, z, 4, 0.12f);
+            Vector3 o1 = GetOffset(x, y, z, 5, 0.12f);
+            Vector3 o2 = GetOffset(x, y, z, 6, 0.12f);
+            Vector3 o3 = GetOffset(x, y, z, 7, 0.12f);
+            rlNormal3f(0.0f, 0.0f, -1.0f);
+            rlTexCoord2f(u1, v0); rlVertex3f(x - hw + o0.x, y - hh + o0.y, z - hd + o0.z);
+            rlTexCoord2f(u1, v1); rlVertex3f(x - hw + o1.x, y + hh + o1.y, z - hd + o1.z);
+            rlTexCoord2f(u0, v1); rlVertex3f(x + hw + o2.x, y + hh + o2.y, z - hd + o2.z);
+            rlTexCoord2f(u0, v0); rlVertex3f(x + hw + o3.x, y - hh + o3.y, z - hd + o3.z);
+        }
         
         // Left Face (Facing West: -x)
-        rlNormal3f(-1.0f, 0.0f, 0.0f);
-        rlTexCoord2f(u0, v0); rlVertex3f(x - hw, y - hh, z - hd);
-        rlTexCoord2f(u1, v0); rlVertex3f(x - hw, y - hh, z + hd);
-        rlTexCoord2f(u1, v1); rlVertex3f(x - hw, y + hh, z + hd);
-        rlTexCoord2f(u0, v1); rlVertex3f(x - hw, y + hh, z - hd);
+        {
+            Vector3 o0 = GetOffset(x, y, z, 8, 0.12f);
+            Vector3 o1 = GetOffset(x, y, z, 9, 0.12f);
+            Vector3 o2 = GetOffset(x, y, z, 10, 0.12f);
+            Vector3 o3 = GetOffset(x, y, z, 11, 0.12f);
+            rlNormal3f(-1.0f, 0.0f, 0.0f);
+            rlTexCoord2f(u0, v0); rlVertex3f(x - hw + o0.x, y - hh + o0.y, z - hd + o0.z);
+            rlTexCoord2f(u1, v0); rlVertex3f(x - hw + o1.x, y - hh + o1.y, z + hd + o1.z);
+            rlTexCoord2f(u1, v1); rlVertex3f(x - hw + o2.x, y + hh + o2.y, z + hd + o2.z);
+            rlTexCoord2f(u0, v1); rlVertex3f(x - hw + o3.x, y + hh + o3.y, z - hd + o3.z);
+        }
         
         // Right Face (Facing East: +x)
-        rlNormal3f(1.0f, 0.0f, 0.0f);
-        rlTexCoord2f(u1, v0); rlVertex3f(x + hw, y - hh, z - hd);
-        rlTexCoord2f(u1, v1); rlVertex3f(x + hw, y + hh, z - hd);
-        rlTexCoord2f(u0, v1); rlVertex3f(x + hw, y + hh, z + hd);
-        rlTexCoord2f(u0, v0); rlVertex3f(x + hw, y - hh, z + hd);
+        {
+            Vector3 o0 = GetOffset(x, y, z, 12, 0.12f);
+            Vector3 o1 = GetOffset(x, y, z, 13, 0.12f);
+            Vector3 o2 = GetOffset(x, y, z, 14, 0.12f);
+            Vector3 o3 = GetOffset(x, y, z, 15, 0.12f);
+            rlNormal3f(1.0f, 0.0f, 0.0f);
+            rlTexCoord2f(u1, v0); rlVertex3f(x + hw + o0.x, y - hh + o0.y, z - hd + o0.z);
+            rlTexCoord2f(u1, v1); rlVertex3f(x + hw + o1.x, y + hh + o1.y, z - hd + o1.z);
+            rlTexCoord2f(u0, v1); rlVertex3f(x + hw + o2.x, y + hh + o2.y, z + hd + o2.z);
+            rlTexCoord2f(u0, v0); rlVertex3f(x + hw + o3.x, y - hh + o3.y, z + hd + o3.z);
+        }
         
         // Top Face (Facing Up: +y)
-        rlNormal3f(0.0f, 1.0f, 0.0f);
-        rlTexCoord2f(u0, v0); rlVertex3f(x - hw, y + hh, z - hd);
-        rlTexCoord2f(u0, v1); rlVertex3f(x - hw, y + hh, z + hd);
-        rlTexCoord2f(u1, v1); rlVertex3f(x + hw, y + hh, z + hd);
-        rlTexCoord2f(u1, v0); rlVertex3f(x + hw, y + hh, z - hd);
+        {
+            Vector3 o0 = GetOffset(x, y, z, 16, 0.12f);
+            Vector3 o1 = GetOffset(x, y, z, 17, 0.12f);
+            Vector3 o2 = GetOffset(x, y, z, 18, 0.12f);
+            Vector3 o3 = GetOffset(x, y, z, 19, 0.12f);
+            rlNormal3f(0.0f, 1.0f, 0.0f);
+            rlTexCoord2f(u0, v0); rlVertex3f(x - hw + o0.x, y + hh + o0.y, z - hd + o0.z);
+            rlTexCoord2f(u0, v1); rlVertex3f(x - hw + o1.x, y + hh + o1.y, z + hd + o1.z);
+            rlTexCoord2f(u1, v1); rlVertex3f(x + hw + o2.x, y + hh + o2.y, z + hd + o2.z);
+            rlTexCoord2f(u1, v0); rlVertex3f(x + hw + o3.x, y + hh + o3.y, z - hd + o3.z);
+        }
         
         // Bottom Face (Facing Down: -y)
-        rlNormal3f(0.0f, -1.0f, 0.0f);
-        rlTexCoord2f(u1, v0); rlVertex3f(x - hw, y - hh, z - hd);
-        rlTexCoord2f(u0, v0); rlVertex3f(x + hw, y - hh, z - hd);
-        rlTexCoord2f(u0, v1); rlVertex3f(x + hw, y - hh, z + hd);
-        rlTexCoord2f(u1, v1); rlVertex3f(x - hw, y - hh, z + hd);
+        {
+            Vector3 o0 = GetOffset(x, y, z, 20, 0.12f);
+            Vector3 o1 = GetOffset(x, y, z, 21, 0.12f);
+            Vector3 o2 = GetOffset(x, y, z, 22, 0.12f);
+            Vector3 o3 = GetOffset(x, y, z, 23, 0.12f);
+            rlNormal3f(0.0f, -1.0f, 0.0f);
+            rlTexCoord2f(u1, v0); rlVertex3f(x - hw + o0.x, y - hh + o0.y, z - hd + o0.z);
+            rlTexCoord2f(u0, v0); rlVertex3f(x + hw + o3.x, y - hh + o3.y, z - hd + o3.z);
+            rlTexCoord2f(u0, v1); rlVertex3f(x + hw + o2.x, y - hh + o2.y, z + hd + o2.z);
+            rlTexCoord2f(u1, v1); rlVertex3f(x - hw + o1.x, y - hh + o1.y, z + hd + o1.z);
+        }
     rlEnd();
+
+    // D. Rocky protrusions (random chiseled stones sticking out of the block faces)
+    int protrusions = 2;
+    for (int p = 0; p < protrusions; p++) {
+        int h = (int)(x * 73856093) ^ (int)(y * 19349663) ^ (int)(z * 83492791) ^ (p * 557);
+        h = (h ^ (h >> 16)) * 0x85ebca6b;
+        h ^= (h >> 16);
+
+        float px = (float)(h % 100 - 50) * 0.01f * (hw * 0.7f);
+        float py = (float)((h / 3) % 100 - 50) * 0.01f * (hh * 0.7f);
+        float pz = (float)((h / 5) % 100 - 50) * 0.01f * (hd * 0.7f);
+
+        float pw = (0.25f + (float)(h % 4) * 0.08f) * size.x;
+        float ph = (0.25f + (float)((h / 2) % 4) * 0.08f) * size.y;
+        float pd = (0.25f + (float)((h / 3) % 4) * 0.08f) * size.z;
+
+        Color pTint = tint;
+        if (h % 2 == 0) {
+            pTint.r = (unsigned char)(tint.r * 0.75f);
+            pTint.g = (unsigned char)(tint.g * 0.75f);
+            pTint.b = (unsigned char)(tint.b * 0.75f);
+        } else {
+            pTint.r = (unsigned char)(fminf(255.0f, tint.r * 1.2f));
+            pTint.g = (unsigned char)(fminf(255.0f, tint.g * 1.2f));
+            pTint.b = (unsigned char)(fminf(255.0f, tint.b * 1.2f));
+        }
+
+        float px_hw = pw / 2.0f;
+        float py_hh = ph / 2.0f;
+        float pz_hd = pd / 2.0f;
+
+        rlBegin(RL_QUADS);
+            rlColor4ub(pTint.r, pTint.g, pTint.b, pTint.a);
+            // Front face (+z offset)
+            rlNormal3f(0.0f, 0.0f, 1.0f);
+            rlTexCoord2f(u0, v0); rlVertex3f(x + px - px_hw, y + py - py_hh, z + pz + pz_hd + 0.04f);
+            rlTexCoord2f(u1, v0); rlVertex3f(x + px + px_hw, y + py - py_hh, z + pz + pz_hd + 0.04f);
+            rlTexCoord2f(u1, v1); rlVertex3f(x + px + px_hw, y + py + py_hh, z + pz + pz_hd + 0.04f);
+            rlTexCoord2f(u0, v1); rlVertex3f(x + px - px_hw, y + py + py_hh, z + pz + pz_hd + 0.04f);
+
+            // Left face (-x offset)
+            rlNormal3f(-1.0f, 0.0f, 0.0f);
+            rlTexCoord2f(u0, v0); rlVertex3f(x + px - px_hw - 0.04f, y + py - py_hh, z + pz - pz_hd);
+            rlTexCoord2f(u1, v0); rlVertex3f(x + px - px_hw - 0.04f, y + py - py_hh, z + pz + pz_hd);
+            rlTexCoord2f(u1, v1); rlVertex3f(x + px - px_hw - 0.04f, y + py + py_hh, z + pz + pz_hd);
+            rlTexCoord2f(u0, v1); rlVertex3f(x + px - px_hw - 0.04f, y + py + py_hh, z + pz - pz_hd);
+
+            // Right face (+x offset)
+            rlNormal3f(1.0f, 0.0f, 0.0f);
+            rlTexCoord2f(u1, v0); rlVertex3f(x + px + px_hw + 0.04f, y + py - py_hh, z + pz - pz_hd);
+            rlTexCoord2f(u1, v1); rlVertex3f(x + px + px_hw + 0.04f, y + py + py_hh, z + pz - pz_hd);
+            rlTexCoord2f(u0, v1); rlVertex3f(x + px + px_hw + 0.04f, y + py + py_hh, z + pz + pz_hd);
+            rlTexCoord2f(u0, v0); rlVertex3f(x + px + px_hw + 0.04f, y + py - py_hh, z + pz + pz_hd);
+
+            // Top face (+y offset)
+            rlNormal3f(0.0f, 1.0f, 0.0f);
+            rlTexCoord2f(u0, v0); rlVertex3f(x + px - px_hw, y + py + py_hh + 0.04f, z + pz - pz_hd);
+            rlTexCoord2f(u0, v1); rlVertex3f(x + px - px_hw, y + py + py_hh + 0.04f, z + pz + pz_hd);
+            rlTexCoord2f(u1, v1); rlVertex3f(x + px + px_hw, y + py + py_hh + 0.04f, z + pz + pz_hd);
+            rlTexCoord2f(u1, v0); rlVertex3f(x + px + px_hw, y + py + py_hh + 0.04f, z + pz - pz_hd);
+        rlEnd();
+    }
+
     rlSetTexture(0);
 }
 
@@ -1040,18 +1151,27 @@ Texture2D GenerateEnvironmentTileSheet() {
                 }
                 else if (ty < 4) { // Natural Stone / Earth transit floors
                     ImageDrawRectangle(&img, ox, oy, 32, 32, (Color){ 54, 45, 38, 255 }); // earth base
-                    // Draw irregular flagstone textures
+                    // Irregular sand patches
+                    for (int s = 0; s < 5; s++) {
+                        int sx = GetRandomValue(2, 22);
+                        int sy = GetRandomValue(2, 22);
+                        int sw = GetRandomValue(6, 12);
+                        int sh = GetRandomValue(4, 10);
+                        ImageDrawRectangle(&img, ox + sx, oy + sy, sw, sh, (Color){ 74, 62, 50, 255 });
+                    }
+                    // Draw irregular flagstones/rocks
                     for (int f = 0; f < 3; f++) {
                         int px = GetRandomValue(2, 20);
                         int py = GetRandomValue(2, 20);
-                        int w = GetRandomValue(6, 12);
-                        int h = GetRandomValue(6, 12);
-                        ImageDrawRectangle(&img, ox + px, oy + py, w, h, (Color){ 68, 58, 48, 255 });
+                        int w = GetRandomValue(5, 10);
+                        int h = GetRandomValue(4, 8);
+                        ImageDrawRectangle(&img, ox + px, oy + py, w, h, (Color){ 80, 72, 62, 255 });
                         ImageDrawRectangleLines(&img, (Rectangle){ (float)(ox + px), (float)(oy + py), (float)w, (float)h }, 1, rockDark);
                     }
-                    // Faint gravel dots
-                    for (int d = 0; d < 10; d++) {
+                    // Faint gravel & sand dots
+                    for (int d = 0; d < 15; d++) {
                         ImageDrawPixel(&img, ox + GetRandomValue(1, 30), oy + GetRandomValue(1, 30), rockLight);
+                        ImageDrawPixel(&img, ox + GetRandomValue(1, 30), oy + GetRandomValue(1, 30), rockDark);
                     }
                 }
                 else { // Background deep cave background
@@ -1085,19 +1205,29 @@ Texture2D GenerateEnvironmentTileSheet() {
                 }
                 else if (ty < 4) { // Floor
                     ImageDrawRectangle(&img, ox, oy, 32, 32, (Color){ 30, 30, 42, 255 }); // dark floor
-                    // Draw flat moss stones
+                    // Sandy/ashy purple dust patches
+                    for (int s = 0; s < 5; s++) {
+                        int sx = GetRandomValue(2, 22);
+                        int sy = GetRandomValue(2, 22);
+                        int sw = GetRandomValue(5, 11);
+                        int sh = GetRandomValue(4, 9);
+                        ImageDrawRectangle(&img, ox + sx, oy + sy, sw, sh, (Color){ 40, 35, 50, 255 });
+                    }
+                    // Draw flat moss stones & crystal pebbles
                     for (int f = 0; f < 3; f++) {
                         int px = GetRandomValue(2, 20);
                         int py = GetRandomValue(2, 20);
-                        int w = GetRandomValue(6, 12);
-                        int h = GetRandomValue(6, 12);
-                        ImageDrawRectangle(&img, ox + px, oy + py, w, h, (Color){ 45, 45, 60, 255 });
-                        // Moss fringe on floor flagstones
-                        ImageDrawRectangle(&img, ox + px, oy + py, w, 2, (Color){ 10, 110, 80, 255 });
+                        int w = GetRandomValue(6, 11);
+                        int h = GetRandomValue(5, 9);
+                        ImageDrawRectangle(&img, ox + px, oy + py, w, h, (Color){ 48, 48, 64, 255 });
+                        ImageDrawRectangle(&img, ox + px, oy + py, w, 2, (Color){ 10, 110, 80, 255 }); // moss
                     }
-                    // Glowing spores
-                    for (int sp = 0; sp < 4; sp++) {
+                    // Glowing crystal shards and spores
+                    for (int sp = 0; sp < 12; sp++) {
                         ImageDrawPixel(&img, ox + GetRandomValue(2, 29), oy + GetRandomValue(2, 29), crystalGlow);
+                        if (sp % 3 == 0) {
+                            ImageDrawPixel(&img, ox + GetRandomValue(2, 29), oy + GetRandomValue(2, 29), crystalVibe);
+                        }
                     }
                 }
                 else { // Background deep dark
@@ -1130,11 +1260,27 @@ Texture2D GenerateEnvironmentTileSheet() {
                 }
                 else if (ty < 4) { // Floor
                     ImageDrawRectangle(&img, ox, oy, 32, 32, lavaDark);
+                    // Dark obsidian sand patches
+                    for (int s = 0; s < 4; s++) {
+                        int sx = GetRandomValue(2, 22);
+                        int sy = GetRandomValue(2, 22);
+                        int sw = GetRandomValue(6, 12);
+                        int sh = GetRandomValue(5, 10);
+                        ImageDrawRectangle(&img, ox + sx, oy + sy, sw, sh, (Color){ 24, 20, 20, 255 });
+                    }
                     // Lava pools / cracks in floor
                     ImageDrawRectangle(&img, ox + 4, oy + 12, 24, 8, lavaGlow);
                     ImageDrawRectangle(&img, ox + 8, oy + 14, 16, 4, lavaCore);
-                    // Basalt cobblestone details
-                    ImageDrawRectangleLines(&img, (Rectangle){ (float)ox, (float)oy, 32, 32 }, 1, (Color){ 40, 35, 35, 255 });
+                    // Basalt cobblestone details / volcanic pebbles
+                    for (int f = 0; f < 3; f++) {
+                        int px = GetRandomValue(2, 20);
+                        int py = GetRandomValue(2, 20);
+                        ImageDrawRectangle(&img, ox + px, oy + py, GetRandomValue(3, 6), GetRandomValue(3, 5), (Color){ 48, 40, 40, 255 });
+                    }
+                    // Magma ash sparks
+                    for (int sp = 0; sp < 10; sp++) {
+                        ImageDrawPixel(&img, ox + GetRandomValue(2, 29), oy + GetRandomValue(2, 29), lavaGlow);
+                    }
                 }
                 else { // Background deep dark
                     ImageDrawRectangle(&img, ox, oy, 32, 32, BLACK);
@@ -2083,19 +2229,8 @@ int main(void) {
     camera.fovy = 52.0f;
     camera.projection = CAMERA_PERSPECTIVE;
     
-    Texture2D charSpritesheet;
-    if (FindResourcePath("spritesheet.png") != NULL) {
-        charSpritesheet = LoadTextureWithChromaKey("spritesheet.png", BLACK);
-    } else {
-        charSpritesheet = GenerateProceduralSpritesheet();
-    }
-    
-    Texture2D envSpritesheet;
-    if (FindResourcePath("tile_spritesheet.png") != NULL) {
-        envSpritesheet = LoadTextureWithChromaKey("tile_spritesheet.png", BLACK);
-    } else {
-        envSpritesheet = GenerateEnvironmentTileSheet();
-    }
+    Texture2D charSpritesheet = GenerateProceduralSpritesheet();
+    Texture2D envSpritesheet = GenerateEnvironmentTileSheet();
     Texture2D monitorTexture = GenerateMonitorTexture();
     Texture2D pistolTexture = GeneratePistolTexture();
     Texture2D portalTexture = GeneratePortalTexture();
