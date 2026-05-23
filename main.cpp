@@ -1303,6 +1303,70 @@ Texture2D GenerateEnvironmentTileSheet() {
     return tex;
 }
 
+Texture2D GenerateMonitorTexture() {
+    Image img = GenImageColor(64, 64, (Color){ 5, 20, 10, 255 });
+    for (int y = 0; y < 64; y += 2) {
+        ImageDrawLine(&img, 0, y, 64, y, (Color){ 10, 40, 20, 100 });
+    }
+    ImageDrawRectangleLines(&img, (Rectangle){ 0, 0, 64, 64 }, 2, (Color){ 20, 120, 40, 255 });
+    for (int i = 0; i < 4; i++) {
+        int y = 8 + i * 12;
+        int barWidth = 10 + (i * 7) % 35;
+        ImageDrawRectangle(&img, 6, y, barWidth, 4, LIME);
+        ImageDrawRectangle(&img, 6, y + 5, barWidth + 5, 2, GREEN);
+    }
+    ImageDrawCircle(&img, 50, 45, 6, (Color){ 10, 80, 30, 255 });
+    ImageDrawCircle(&img, 50, 45, 2, LIME);
+    Texture2D tex = LoadTextureFromImage(img);
+    UnloadImage(img);
+    SetTextureFilter(tex, TEXTURE_FILTER_POINT);
+    return tex;
+}
+
+Texture2D GeneratePistolTexture() {
+    Image img = GenImageColor(64, 64, (Color){ 40, 45, 50, 255 });
+    for (int y = 32; y < 64; y += 4) {
+        ImageDrawLine(&img, 0, y, 32, y, (Color){ 20, 22, 25, 255 });
+    }
+    ImageDrawRectangle(&img, 10, 5, 44, 15, (Color){ 70, 75, 80, 255 });
+    ImageDrawRectangleLines(&img, (Rectangle){ 2, 2, 60, 60 }, 2, (Color){ 80, 85, 90, 255 });
+    ImageDrawRectangle(&img, 24, 25, 20, 8, ORANGE);
+    ImageDrawRectangle(&img, 28, 27, 12, 4, GOLD);
+    ImageDrawLine(&img, 45, 5, 55, 15, YELLOW);
+    ImageDrawLine(&img, 48, 5, 58, 15, YELLOW);
+    Texture2D tex = LoadTextureFromImage(img);
+    UnloadImage(img);
+    SetTextureFilter(tex, TEXTURE_FILTER_POINT);
+    return tex;
+}
+
+Texture2D GeneratePortalTexture() {
+    Image img = GenImageColor(128, 128, BLANK);
+    for (int y = 0; y < 128; y++) {
+        for (int x = 0; x < 128; x++) {
+            float dx = (float)(x - 64);
+            float dy = (float)(y - 64);
+            float dist = sqrtf(dx * dx + dy * dy);
+            if (dist < 64.0f) {
+                float angle = atan2f(dy, dx);
+                float phase = angle * 3.0f + dist * 0.15f;
+                float intensity = (sinf(phase) + 1.0f) * 0.5f;
+                float alphaFade = 1.0f - (dist / 64.0f);
+                alphaFade = alphaFade * alphaFade;
+                unsigned char r = (unsigned char)(intensity * 120.0f + (1.0f - intensity) * 40.0f);
+                unsigned char g = (unsigned char)(intensity * 255.0f);
+                unsigned char b = (unsigned char)(255.0f);
+                unsigned char a = (unsigned char)(alphaFade * 255.0f * (0.4f + 0.6f * intensity));
+                ImageDrawPixel(&img, x, y, (Color){ r, g, b, a });
+            }
+        }
+    }
+    Texture2D tex = LoadTextureFromImage(img);
+    UnloadImage(img);
+    SetTextureFilter(tex, TEXTURE_FILTER_BILINEAR);
+    return tex;
+}
+
 
 // --- MAP GEN & TILE COLLISIONS ---
 void CarveOrganicRoom(Room& room) {
@@ -1746,23 +1810,11 @@ void GenerateProceduralDungeon() {
                     dec.isInsect = false;
                 }
                 else {
-                    // Insect
+                    // Insect: Beetle only (fireflies removed)
                     dec.isInsect = true;
-                    int subRoll = GetRandomValue(0, 1);
-                    if (subRoll == 0) {
-                        // Beetle
-                        dec.type = 8; // Beetle (sprites drawn at row 5)
-                        dec.isFly = false;
-                        dec.speed = (float)GetRandomValue(6, 12) * 0.1f; // 0.6 - 1.2
-                    } else {
-                        // Firefly
-                        dec.type = 9; // Firefly (sprites drawn at row 6)
-                        dec.isFly = true;
-                        dec.speed = (float)GetRandomValue(12, 22) * 0.1f; // 1.2 - 2.2
-                        dec.position.y = (float)GetRandomValue(5, 12) * 0.1f; // starts suspended
-                        dec.floatHeight = dec.position.y;
-                        dec.bobOffset = (float)GetRandomValue(0, 100) * 0.1f;
-                    }
+                    dec.type = 8; // Beetle (sprites drawn at row 5)
+                    dec.isFly = false;
+                    dec.speed = (float)GetRandomValue(6, 12) * 0.1f; // 0.6 - 1.2
                     
                     // Wander setup
                     float angle = (float)GetRandomValue(0, 360) * DEG2RAD;
@@ -2019,6 +2071,9 @@ int main(void) {
     } else {
         envSpritesheet = GenerateEnvironmentTileSheet();
     }
+    Texture2D monitorTexture = GenerateMonitorTexture();
+    Texture2D pistolTexture = GeneratePistolTexture();
+    Texture2D portalTexture = GeneratePortalTexture();
     InitStarfield();
     
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
@@ -3676,24 +3731,88 @@ int main(void) {
                     }
                     
                     // D. Interactive 3D modules
-                    // Greenhouse Cylinder (Green)
-                    DrawCylinder((Vector3){ -4.5f, 0.8f, -2.0f }, 0.6f, 0.6f, 1.6f, 16, Fade(GREEN, 0.25f));
-                    DrawCylinderWires((Vector3){ -4.5f, 0.8f, -2.0f }, 0.6f, 0.6f, 1.6f, 16, GREEN);
+                    // Upgrade Terminal: 3D PC Monitor (Greenhouse replacement)
+                    // Base Desk
+                    DrawWallBlock(envSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ -4.5f, 0.2f, -2.0f }, (Vector3){ 1.2f, 0.4f, 0.8f }, (Color){ 60, 65, 70, 255 });
+                    // Monitor Stand/Support
+                    DrawWallBlock(envSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ -4.5f, 0.5f, -2.0f }, (Vector3){ 0.15f, 0.2f, 0.15f }, (Color){ 100, 105, 110, 255 });
+                    // Monitor Frame
+                    DrawWallBlock(envSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ -4.5f, 0.9f, -2.0f }, (Vector3){ 1.0f, 0.6f, 0.15f }, (Color){ 30, 30, 35, 255 });
+                    // Textured Monitor Screen (facing +z)
+                    DrawWallBlock(monitorTexture, (Rectangle){ 0.0f, 0.0f, (float)monitorTexture.width, (float)monitorTexture.height }, (Vector3){ -4.5f, 0.9f, -1.91f }, (Vector3){ 0.9f, 0.5f, 0.04f }, WHITE);
                     if (GetRandomValue(0, 100) < 6) {
                         SpawnParticles((Vector3){ -4.5f + (float)GetRandomValue(-2, 2) * 0.1f, 0.2f, -2.0f + (float)GetRandomValue(-2, 2) * 0.1f }, GREEN, 1);
                     }
                     
-                    // Armory Module Cylinder (Red)
-                    DrawCylinder((Vector3){ 4.5f, 0.8f, -2.0f }, 0.6f, 0.6f, 1.6f, 16, Fade(RED, 0.25f));
-                    DrawCylinderWires((Vector3){ 4.5f, 0.8f, -2.0f }, 0.6f, 0.6f, 1.6f, 16, RED);
+                    // Weapon Terminal: Floating, rotating 3D sci-fi Pistol
+                    // Holographic Pedestal base
+                    DrawWallBlock(envSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ 4.5f, 0.2f, -2.0f }, (Vector3){ 1.0f, 0.4f, 1.0f }, (Color){ 40, 40, 45, 255 });
+                    DrawCylinder((Vector3){ 4.5f, 0.55f, -2.0f }, 0.4f, 0.4f, 0.3f, 16, Fade(RED, 0.3f));
+                    DrawCylinderWires((Vector3){ 4.5f, 0.55f, -2.0f }, 0.4f, 0.4f, 0.3f, 16, RED);
+                    // Floating & rotating gun
+                    rlPushMatrix();
+                        rlTranslatef(4.5f, 1.1f + sinf((float)GetTime() * 3.0f) * 0.05f, -2.0f);
+                        rlRotatef((float)GetTime() * 45.0f, 0.0f, 1.0f, 0.0f);
+                        // Pistol Barrel (main body)
+                        DrawWallBlock(pistolTexture, (Rectangle){ 0.0f, 0.0f, (float)pistolTexture.width, (float)pistolTexture.height }, (Vector3){ 0.1f, 0.0f, 0.0f }, (Vector3){ 0.6f, 0.16f, 0.12f }, WHITE);
+                        // Pistol Grip (handle)
+                        DrawWallBlock(pistolTexture, (Rectangle){ 0.0f, 0.0f, (float)pistolTexture.width, (float)pistolTexture.height }, (Vector3){ -0.15f, -0.18f, 0.0f }, (Vector3){ 0.15f, 0.3f, 0.1f }, WHITE);
+                        // Laser scope sight
+                        DrawWallBlock(pistolTexture, (Rectangle){ 0.0f, 0.0f, (float)pistolTexture.width, (float)pistolTexture.height }, (Vector3){ 0.0f, 0.12f, 0.0f }, (Vector3){ 0.3f, 0.08f, 0.08f }, LIME);
+                        // Energy chamber cylinder
+                        DrawCylinder((Vector3){ 0.1f, 0.0f, 0.0f }, 0.04f, 0.04f, 0.25f, 8, ORANGE);
+                    rlPopMatrix();
                     if (GetRandomValue(0, 100) < 6) {
                         SpawnParticles((Vector3){ 4.5f + (float)GetRandomValue(-2, 2) * 0.1f, 0.2f, -2.0f + (float)GetRandomValue(-2, 2) * 0.1f }, ORANGE, 1);
                     }
                     
-                    // Navigation Console Projector (Cyan)
-                    DrawCylinder((Vector3){ 0.0f, 0.5f, -4.5f }, 0.8f, 0.8f, 1.0f, 16, Fade(CYAN, 0.3f));
-                    DrawCylinderWires((Vector3){ 0.0f, 0.5f, -4.5f }, 0.8f, 0.8f, 1.0f, 16, CYAN);
-                    DrawSphere((Vector3){ 0.0f, 1.2f, -4.5f }, 0.22f, Fade(CYAN, 0.8f));
+                    // Level Entry Portal (replacing Navigation cylinder)
+                    // Portal Frame Arch (octagon of 12 blocks)
+                    Vector3 portalCenter = { 0.0f, 1.2f, -4.5f };
+                    float portalRadius = 1.1f;
+                    for (int i = 0; i < 12; i++) {
+                        float angle = (float)i * (360.0f / 12.0f) * DEG2RAD;
+                        Vector3 blockPos = {
+                            portalCenter.x + cosf(angle) * portalRadius,
+                            portalCenter.y + sinf(angle) * portalRadius,
+                            portalCenter.z
+                        };
+                        DrawWallBlock(envSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, blockPos, (Vector3){ 0.25f, 0.25f, 0.25f }, (Color){ 70, 80, 95, 255 });
+                    }
+                    // Swirling portal vortex (rotating textured plane)
+                    rlPushMatrix();
+                        rlTranslatef(portalCenter.x, portalCenter.y, portalCenter.z);
+                        rlRotatef((float)GetTime() * -90.0f, 0.0f, 0.0f, 1.0f);
+                        float portalSize = portalRadius * 1.8f;
+                        float u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 1.0f;
+                        rlSetTexture(portalTexture.id);
+                        rlBegin(RL_QUADS);
+                            rlColor4ub(255, 255, 255, 220);
+                            // South face (facing player)
+                            rlNormal3f(0.0f, 0.0f, 1.0f);
+                            rlTexCoord2f(u0, v0); rlVertex3f(-portalSize/2, -portalSize/2, 0.0f);
+                            rlTexCoord2f(u1, v0); rlVertex3f(portalSize/2, -portalSize/2, 0.0f);
+                            rlTexCoord2f(u1, v1); rlVertex3f(portalSize/2, portalSize/2, 0.0f);
+                            rlTexCoord2f(u0, v1); rlVertex3f(-portalSize/2, portalSize/2, 0.0f);
+                            // North face (back side)
+                            rlNormal3f(0.0f, 0.0f, -1.0f);
+                            rlTexCoord2f(u1, v0); rlVertex3f(-portalSize/2, -portalSize/2, 0.0f);
+                            rlTexCoord2f(u1, v1); rlVertex3f(-portalSize/2, portalSize/2, 0.0f);
+                            rlTexCoord2f(u0, v1); rlVertex3f(portalSize/2, portalSize/2, 0.0f);
+                            rlTexCoord2f(u0, v0); rlVertex3f(portalSize/2, -portalSize/2, 0.0f);
+                        rlEnd();
+                        rlSetTexture(0);
+                    rlPopMatrix();
+                    if (GetRandomValue(0, 100) < 15) {
+                        float pAngle = (float)GetRandomValue(0, 360) * DEG2RAD;
+                        float pDist = (float)GetRandomValue(0, 10) * 0.1f * portalRadius;
+                        Vector3 sparkPos = {
+                            portalCenter.x + cosf(pAngle) * pDist,
+                            portalCenter.y + sinf(pAngle) * pDist,
+                            portalCenter.z + (float)GetRandomValue(-2, 2) * 0.05f
+                        };
+                        SpawnParticles(sparkPos, CYAN, 1);
+                    }
                     
                     // IA Holographic Projector
                     DrawCylinder((Vector3){ 0.0f, 0.2f, -1.0f }, 0.4f, 0.4f, 0.4f, 16, Fade(DARKGRAY, 0.8f));
@@ -3757,7 +3876,7 @@ int main(void) {
                         Vector2 sPos = GetWorldToScreen((Vector3){ greenhousePos.x, greenhousePos.y + 1.2f, greenhousePos.z }, camera);
                         DrawRectangle(sPos.x - 90, sPos.y - 12, 180, 24, Fade(BLACK, 0.8f));
                         DrawRectangleLines(sPos.x - 90, sPos.y - 12, 180, 24, GREEN);
-                        DrawText("[E] TERMINAL INVERNADERO", sPos.x - 80, sPos.y - 6, 11, GREEN);
+                        DrawText("[E] TERMINAL DE MEJORAS", sPos.x - 80, sPos.y - 6, 11, GREEN);
                     }
                     else if (distArmory < 2.0f) {
                         Vector2 sPos = GetWorldToScreen((Vector3){ armoryPos.x, armoryPos.y + 1.2f, armoryPos.z }, camera);
@@ -3769,7 +3888,7 @@ int main(void) {
                         Vector2 sPos = GetWorldToScreen((Vector3){ navigationPos.x, navigationPos.y + 1.2f, navigationPos.z }, camera);
                         DrawRectangle(sPos.x - 90, sPos.y - 12, 180, 24, Fade(BLACK, 0.8f));
                         DrawRectangleLines(sPos.x - 90, sPos.y - 12, 180, 24, CYAN);
-                        DrawText("[E] CONSOLA DE NAVEGACION", sPos.x - 80, sPos.y - 6, 11, CYAN);
+                        DrawText("[E] PORTAL DE NAVEGACION", sPos.x - 80, sPos.y - 6, 11, CYAN);
                     }
                     else if (distIA < 1.8f) {
                         Vector2 sPos = GetWorldToScreen((Vector3){ iaPos.x, iaPos.y + 0.8f, iaPos.z }, camera);
@@ -4627,9 +4746,10 @@ int main(void) {
                     
                     BeginBlendMode(BLEND_ADDITIVE);
                     
-                    // Player Light
+                    // Player Light (Large halo of light)
                     Vector2 playerScreenPos = GetWorldToScreen(player.position, camera);
-                    DrawCircleGradient(playerScreenPos.x, playerScreenPos.y, 250.0f, Fade(YELLOW, 0.45f), BLANK);
+                    DrawCircleGradient(playerScreenPos.x, playerScreenPos.y, 450.0f, Fade(YELLOW, 0.45f), BLANK);
+                    DrawCircleGradient(playerScreenPos.x, playerScreenPos.y, 180.0f, Fade(WHITE, 0.25f), BLANK);
                     
                     // Projectile Lights
                     for (int i = 0; i < MAX_PROJECTILES; i++) {
@@ -4843,6 +4963,9 @@ int main(void) {
     UnloadModel(cubeModel);
     UnloadTexture(envSpritesheet);
     UnloadTexture(charSpritesheet);
+    UnloadTexture(monitorTexture);
+    UnloadTexture(pistolTexture);
+    UnloadTexture(portalTexture);
     
     UnloadShader(nebulaShader);
     UnloadShader(tachyonShader);
