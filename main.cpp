@@ -676,14 +676,7 @@ void DrawTextGlitch(const char *text, int posX, int posY, int fontSize, Color co
         }
     }
     
-    int offsetX = 0;
-    int offsetY = 0;
-    if (glitchIntensity > 0.35f) {
-        offsetX = GetRandomValue(-4, 4) * (int)(glitchIntensity * 1.8f);
-        offsetY = GetRandomValue(-4, 4) * (int)(glitchIntensity * 1.8f);
-    }
-    
-    DrawText(tempBuffer, posX + offsetX, posY + offsetY, fontSize, color);
+    DrawText(tempBuffer, posX, posY, fontSize, color);
 }
 
 // Detailed HUD state
@@ -1419,10 +1412,34 @@ void CarveOrganicRoom(Room& room) {
             room.wallTileVariants[y][x] = 0;
         }
     }
-    if (room.doors[0]) { for(int y=0; y<3; y++) { room.wallTileVariants[y][10]=0; room.wallTileVariants[y][9]=0; room.wallTileVariants[y][11]=0; } } // Top
-    if (room.doors[1]) { for(int y=ROOM_GRID_SIZE-3; y<ROOM_GRID_SIZE; y++) { room.wallTileVariants[y][10]=0; room.wallTileVariants[y][9]=0; room.wallTileVariants[y][11]=0; } } // Bottom
-    if (room.doors[2]) { for(int x=0; x<3; x++) { room.wallTileVariants[10][x]=0; room.wallTileVariants[9][x]=0; room.wallTileVariants[11][x]=0; } } // Left
-    if (room.doors[3]) { for(int x=ROOM_GRID_SIZE-3; x<ROOM_GRID_SIZE; x++) { room.wallTileVariants[10][x]=0; room.wallTileVariants[9][x]=0; room.wallTileVariants[11][x]=0; } } // Right
+    if (room.doors[0]) {
+        for (int y = 0; y <= 10; y++) {
+            room.wallTileVariants[y][9] = 0;
+            room.wallTileVariants[y][10] = 0;
+            room.wallTileVariants[y][11] = 0;
+        }
+    } // Top (North) to center
+    if (room.doors[1]) {
+        for (int y = 10; y < ROOM_GRID_SIZE; y++) {
+            room.wallTileVariants[y][9] = 0;
+            room.wallTileVariants[y][10] = 0;
+            room.wallTileVariants[y][11] = 0;
+        }
+    } // Bottom (South) to center
+    if (room.doors[2]) {
+        for (int x = 0; x <= 10; x++) {
+            room.wallTileVariants[9][x] = 0;
+            room.wallTileVariants[10][x] = 0;
+            room.wallTileVariants[11][x] = 0;
+        }
+    } // Left (West) to center
+    if (room.doors[3]) {
+        for (int x = 10; x < ROOM_GRID_SIZE; x++) {
+            room.wallTileVariants[9][x] = 0;
+            room.wallTileVariants[10][x] = 0;
+            room.wallTileVariants[11][x] = 0;
+        }
+    } // Right (East) to center
     
     // 4. Map to visuals
     for (int y = 0; y < ROOM_GRID_SIZE; y++) {
@@ -1643,7 +1660,15 @@ void GenerateProceduralDungeon() {
                     int gz = (int)(spawnPos.z + 10.5f);
                     if (gx >= 0 && gx < 21 && gz >= 0 && gz < 21) { // ROOM_GRID_SIZE is 21
                         if (r.wallTileVariants[gz][gx] < 0) {
-                            validSpawn = true;
+                            bool safeFromDoors = true;
+                            if (r.doors[0] && Vector3Distance(spawnPos, (Vector3){ 0.0f, 1.0f, -8.8f }) < 4.5f) safeFromDoors = false;
+                            if (r.doors[1] && Vector3Distance(spawnPos, (Vector3){ 0.0f, 1.0f, 8.8f }) < 4.5f) safeFromDoors = false;
+                            if (r.doors[2] && Vector3Distance(spawnPos, (Vector3){ -8.8f, 1.0f, 0.0f }) < 4.5f) safeFromDoors = false;
+                            if (r.doors[3] && Vector3Distance(spawnPos, (Vector3){ 8.8f, 1.0f, 0.0f }) < 4.5f) safeFromDoors = false;
+                            
+                            if (safeFromDoors) {
+                                validSpawn = true;
+                            }
                         }
                     }
                     safetyLimit--;
@@ -2205,7 +2230,7 @@ int main(void) {
                 Vector2 mousePos = GetMousePosition();
                 
                 // Menu buttons bounds (synchronized with rendering)
-                int btnW = 380;
+                int btnW = 560;
                 int btnH = 34;
                 int startY = screenHeight / 2 - 15;
                 
@@ -2754,25 +2779,7 @@ int main(void) {
             
             player.speed = baseSpeed * relicSpeedMult * gravitySpeedPenalty * currentPlanet.groundFriction;
             
-            // Jumping vertical movement (3D vertical jump)
-            float jumpForce = 9.8f / (currentPlanet.gravityMultiplier > 0.1f ? sqrtf(currentPlanet.gravityMultiplier) : 0.3f);
-            
-            if (IsKeyPressed(KEY_SPACE) && player.isGrounded) {
-                player.verticalVelocity = jumpForce;
-                player.isGrounded = false;
-            }
-            
-            if (!player.isGrounded) {
-                float gravityAccel = 9.81f * currentPlanet.gravityMultiplier;
-                player.verticalVelocity -= gravityAccel * dt;
-                player.position.y += player.verticalVelocity * dt;
-                
-                if (player.position.y <= 1.0f) {
-                    player.position.y = 1.0f;
-                    player.verticalVelocity = 0.0f;
-                    player.isGrounded = true;
-                }
-            }
+
             
             if (player.stateTimer > 0.0f) {
                 player.stateTimer -= dt;
@@ -3589,7 +3596,7 @@ int main(void) {
                 
                 // 4. Draw interactive buttons
                 Vector2 mousePos = GetMousePosition();
-                int btnW = 380;
+                int btnW = 560;
                 int btnH = 34;
                 int startY = screenHeight / 2 - 15;
                 
@@ -3605,7 +3612,7 @@ int main(void) {
                 DrawRectangleLinesEx(btnEasy, easyHover ? 2 : 1, easyColor);
                 DrawText("1. DIFICULTAD FACIL", btnEasy.x + 20, btnEasy.y + 8, 16, easyColor);
                 if (selectedDifficulty == DIFF_EASY) {
-                    DrawText("[4 CORAZONES - DROPS MULTIPLES]", btnEasy.x + btnEasy.width - 240, btnEasy.y + 11, 11, LIME);
+                    DrawText("[4 CORAZONES - DROPS MULTIPLES]", btnEasy.x + 230, btnEasy.y + 11, 11, LIME);
                 }
                 
                 // Normal button
@@ -3615,7 +3622,7 @@ int main(void) {
                 DrawRectangleLinesEx(btnNorm, normHover ? 2 : 1, normColor);
                 DrawText("2. DIFICULTAD NORMAL", btnNorm.x + 20, btnNorm.y + 8, 16, normColor);
                 if (selectedDifficulty == DIFF_NORMAL) {
-                    DrawText("[3 CORAZONES - BALANCE ESTANDAR]", btnNorm.x + btnNorm.width - 240, btnNorm.y + 11, 11, GOLD);
+                    DrawText("[3 CORAZONES - BALANCE ESTANDAR]", btnNorm.x + 230, btnNorm.y + 11, 11, GOLD);
                 }
                 
                 // Hard button
@@ -3625,7 +3632,7 @@ int main(void) {
                 DrawRectangleLinesEx(btnHard, hardHover ? 2 : 1, hardColor);
                 DrawText("3. DIFICULTAD EXPERTO", btnHard.x + 20, btnHard.y + 8, 16, hardColor);
                 if (selectedDifficulty == DIFF_HARD) {
-                    DrawText("[DAÑO CRITICO - ENEMIGOS VELOCES]", btnHard.x + btnHard.width - 240, btnHard.y + 11, 11, RED);
+                    DrawText("[DAÑO CRITICO - ENEMIGOS VELOCES]", btnHard.x + 230, btnHard.y + 11, 11, RED);
                 }
                 
                 // Start button
@@ -4199,7 +4206,8 @@ int main(void) {
                         
                         DrawText(planetNames[p], btn.x + 15, btn.y + 7, 13, txtCol);
                         if (!unlocked) {
-                            DrawText("BLOQUEADO (Motor Lvl requerido)", btn.x + 180, btn.y + 7, 10, RED);
+                            int reqLvl = (p == 2) ? 2 : 3;
+                            DrawText(TextFormat("BLOQUEADO (Motor Lvl %d)", reqLvl), btn.x + 210, btn.y + 7, 10, RED);
                         }
                     }
                     
