@@ -21,3 +21,7 @@ Makefile
 CMakeSettings.json
 .gemini/
 antigravity/
+
+# Archivos del sistema y comprimidos
+.DS_Store
+*.rar

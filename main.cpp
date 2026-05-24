@@ -218,6 +218,93 @@ void DrawWallBlock(Texture2D texture, Rectangle source, Vector3 position, Vector
     rlSetTexture(0);
 }
 
+void DrawSpaceshipFloorTile(Texture2D texture, Rectangle source, Vector3 position, Vector2 size, Color tint) {
+    float x = position.x;
+    float y = position.y;
+    float z = position.z;
+    float hw = size.x / 2.0f;
+    float hd = size.y / 2.0f;
+    
+    float u0 = source.x / (float)texture.width;
+    float v0 = source.y / (float)texture.height;
+    float u1 = (source.x + source.width) / (float)texture.width;
+    float v1 = (source.y + source.height) / (float)texture.height;
+
+    rlSetTexture(texture.id);
+    rlBegin(RL_QUADS);
+        rlColor4ub(tint.r, tint.g, tint.b, tint.a);
+        rlNormal3f(0.0f, 1.0f, 0.0f);
+        rlTexCoord2f(u0, v0); rlVertex3f(x - hw, y, z - hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x - hw, y, z + hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x + hw, y, z + hd);
+        rlTexCoord2f(u1, v0); rlVertex3f(x + hw, y, z - hd);
+    rlEnd();
+    rlSetTexture(0);
+}
+
+void DrawSpaceshipWallBlock(Texture2D texture, Rectangle source, Vector3 position, Vector3 size, Color tint) {
+    float x = position.x;
+    float y = position.y;
+    float z = position.z;
+    float hw = size.x / 2.0f;
+    float hh = size.y / 2.0f;
+    float hd = size.z / 2.0f;
+    
+    float u0 = source.x / (float)texture.width;
+    float v0 = source.y / (float)texture.height;
+    float u1 = (source.x + source.width) / (float)texture.width;
+    float v1 = (source.y + source.height) / (float)texture.height;
+
+    rlSetTexture(texture.id);
+    rlBegin(RL_QUADS);
+        rlColor4ub(tint.r, tint.g, tint.b, tint.a);
+        
+        // Front Face (Facing South: +z)
+        rlNormal3f(0.0f, 0.0f, 1.0f);
+        rlTexCoord2f(u0, v0); rlVertex3f(x - hw, y - hh, z + hd);
+        rlTexCoord2f(u1, v0); rlVertex3f(x + hw, y - hh, z + hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x + hw, y + hh, z + hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x - hw, y + hh, z + hd);
+        
+        // Back Face (Facing North: -z)
+        rlNormal3f(0.0f, 0.0f, -1.0f);
+        rlTexCoord2f(u1, v0); rlVertex3f(x - hw, y - hh, z - hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x - hw, y + hh, z - hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x + hw, y + hh, z - hd);
+        rlTexCoord2f(u0, v0); rlVertex3f(x + hw, y - hh, z - hd);
+        
+        // Left Face (Facing West: -x)
+        rlNormal3f(-1.0f, 0.0f, 0.0f);
+        rlTexCoord2f(u0, v0); rlVertex3f(x - hw, y - hh, z - hd);
+        rlTexCoord2f(u1, v0); rlVertex3f(x - hw, y - hh, z + hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x - hw, y + hh, z + hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x - hw, y + hh, z - hd);
+        
+        // Right Face (Facing East: +x)
+        rlNormal3f(1.0f, 0.0f, 0.0f);
+        rlTexCoord2f(u1, v0); rlVertex3f(x + hw, y - hh, z - hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x + hw, y + hh, z - hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x + hw, y + hh, z + hd);
+        rlTexCoord2f(u0, v0); rlVertex3f(x + hw, y - hh, z + hd);
+        
+        // Top Face (Facing Up: +y)
+        rlNormal3f(0.0f, 1.0f, 0.0f);
+        rlTexCoord2f(u0, v0); rlVertex3f(x - hw, y + hh, z - hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x - hw, y + hh, z + hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x + hw, y + hh, z + hd);
+        rlTexCoord2f(u1, v0); rlVertex3f(x + hw, y + hh, z - hd);
+        
+        // Bottom Face (Facing Down: -y)
+        rlNormal3f(0.0f, -1.0f, 0.0f);
+        rlTexCoord2f(u0, v0); rlVertex3f(x - hw, y - hh, z - hd);
+        rlTexCoord2f(u0, v1); rlVertex3f(x - hw, y - hh, z + hd);
+        rlTexCoord2f(u1, v1); rlVertex3f(x + hw, y - hh, z + hd);
+        rlTexCoord2f(u1, v0); rlVertex3f(x + hw, y - hh, z - hd);
+    rlEnd();
+    rlSetTexture(0);
+}
+
+
 void DrawExtrudedBillboardRec(Camera3D camera, Texture2D texture, Rectangle source, Vector3 position, Vector2 size, Color tint) {
     Vector3 camToPos = Vector3Subtract(position, camera.position);
     Vector3 depthDir = { camToPos.x, 0.0f, camToPos.z };
@@ -271,6 +358,21 @@ enum EnemyType {
     ENEMY_KAMIKAZE = 0, // Fast melee chaser, explodes
     ENEMY_SENTRY = 1,   // Static ranged laser spore spitter
     ENEMY_SPREADER = 2  // Heavy AoE purple gas cloud dispenser
+};
+
+// Per-enemy animation spritesheet set
+struct EnemyAnimSet {
+    Texture2D idle;       // idle animation strip
+    Texture2D movement;   // movement animation strip
+    Texture2D attack;     // attack animation strip
+    Texture2D takeDamage; // take-damage animation strip
+    Texture2D death;      // death animation strip
+    int idleFrames;
+    int movementFrames;
+    int attackFrames;
+    int takeDamageFrames;
+    int deathFrames;
+    bool loaded;
 };
 
 enum ItemType {
@@ -990,6 +1092,55 @@ Texture2D LoadTextureWithChromaKey(const char *fileName, Color keyColor) {
     return (Texture2D){ 0 };
 }
 
+static Texture2D LoadEnemySpriteOrBlank(const char* basePath, const char* prefix, const char* suffix) {
+    char path1[256], path2[256];
+    snprintf(path1, 256, "%s%s%s", basePath, prefix, suffix);
+    snprintf(path2, 256, "../%s%s%s", basePath, prefix, suffix);
+    if (FileExists(path1)) {
+        Texture2D t = LoadTexture(path1);
+        SetTextureFilter(t, TEXTURE_FILTER_POINT);
+        return t;
+    }
+    if (FileExists(path2)) {
+        Texture2D t = LoadTexture(path2);
+        SetTextureFilter(t, TEXTURE_FILTER_POINT);
+        return t;
+    }
+    // Return blank 32x32 texture if file not found
+    Image img = GenImageColor(32, 32, BLANK);
+    Texture2D t = LoadTextureFromImage(img);
+    UnloadImage(img);
+    return t;
+}
+
+static EnemyAnimSet LoadEnemyAnimSet(const char* prefix) {
+    EnemyAnimSet s = {};
+    const char* base = "Enemy_Animations_Set/";
+    s.idle       = LoadEnemySpriteOrBlank(base, prefix, "_idle.png");
+    s.movement   = LoadEnemySpriteOrBlank(base, prefix, "_movement.png");
+    s.attack     = LoadEnemySpriteOrBlank(base, prefix, "_attack.png");
+    s.takeDamage = LoadEnemySpriteOrBlank(base, prefix, "_take_damage.png");
+    s.death      = LoadEnemySpriteOrBlank(base, prefix, "_death.png");
+    // Calculate frame counts from texture widths (all sprites are 32px wide per frame)
+    s.idleFrames       = (s.idle.width > 0)       ? s.idle.width / 32       : 1;
+    s.movementFrames   = (s.movement.width > 0)   ? s.movement.width / 32   : 1;
+    s.attackFrames     = (s.attack.width > 0)     ? s.attack.width / 32     : 1;
+    s.takeDamageFrames = (s.takeDamage.width > 0) ? s.takeDamage.width / 32 : 1;
+    s.deathFrames      = (s.death.width > 0)      ? s.death.width / 32      : 1;
+    // skeleton2 has a file named _movemen.png (typo in filename)
+    if (s.movement.width == 0) {
+        char path1[256], path2[256];
+        snprintf(path1, 256, "%s%s%s", base, prefix, "_movemen.png");
+        snprintf(path2, 256, "../%s%s%s", base, prefix, "_movemen.png");
+        if (FileExists(path1)) s.movement = LoadTexture(path1);
+        else if (FileExists(path2)) s.movement = LoadTexture(path2);
+        SetTextureFilter(s.movement, TEXTURE_FILTER_POINT);
+        s.movementFrames = (s.movement.width > 0) ? s.movement.width / 32 : 1;
+    }
+    s.loaded = true;
+    return s;
+}
+
 // Procedural Character Spritesheet with Upgrades and Enemy Types (Width=256, Height=256)
 Texture2D GenerateProceduralSpritesheet() {
     Image img = GenImageColor(256, 256, BLANK);
@@ -1483,7 +1634,140 @@ Texture2D GenerateEnvironmentTileSheet() {
     return tex;
 }
 
+Texture2D GenerateSpaceshipTileSheet() {
+    Image img = GenImageColor(256, 256, BLANK);
+    
+    // Palettes
+    Color metalBase = (Color){ 45, 50, 60, 255 };      // steel base
+    Color metalDark = (Color){ 32, 34, 38, 255 };      // dark metal grooves/borders
+    Color metalLight = (Color){ 80, 85, 100, 255 };     // metallic highlights
+    Color metalMedium = (Color){ 60, 65, 75, 255 };    // medium steel plate
+    Color hazardYellow = (Color){ 230, 160, 10, 255 };  // hazard stripes
+    Color cyanGlow = (Color){ 0, 220, 255, 255 };      // LED lights / computer screens
+    Color greenGlow = (Color){ 50, 220, 80, 255 };
+    Color redGlow = (Color){ 255, 50, 80, 255 };
+    
+    for (int ty = 0; ty < 8; ty++) {
+        for (int tx = 0; tx < 8; tx++) {
+            int ox = tx * 32;
+            int oy = ty * 32;
+            
+            // Default background fill for each tile slot
+            ImageDrawRectangle(&img, ox, oy, 32, 32, metalBase);
+            
+            if (ty < 2 && tx < 3) {
+                // --- Spaceship Walls (Row 0-1, Cols 0-2) ---
+                if (tx == 0) {
+                    // Steel panels with vertical seams and rivets
+                    ImageDrawRectangle(&img, ox + 1, oy + 1, 30, 30, metalMedium);
+                    ImageDrawRectangle(&img, ox + 2, oy + 2, 28, 28, metalBase);
+                    // Vertical center seam
+                    ImageDrawLine(&img, ox + 16, oy, ox + 16, oy + 31, metalDark);
+                    ImageDrawLine(&img, ox + 17, oy, ox + 17, oy + 31, metalLight);
+                    // Rivets in corners
+                    ImageDrawPixel(&img, ox + 4, oy + 4, metalLight);
+                    ImageDrawPixel(&img, ox + 4, oy + 27, metalLight);
+                    ImageDrawPixel(&img, ox + 27, oy + 4, metalLight);
+                    ImageDrawPixel(&img, ox + 27, oy + 27, metalLight);
+                    ImageDrawPixel(&img, ox + 5, oy + 5, metalDark);
+                    ImageDrawPixel(&img, ox + 5, oy + 28, metalDark);
+                    ImageDrawPixel(&img, ox + 28, oy + 5, metalDark);
+                    ImageDrawPixel(&img, ox + 28, oy + 28, metalDark);
+                }
+                else if (tx == 1) {
+                    // Control panel with LEDs, wires and screens
+                    ImageDrawRectangle(&img, ox + 1, oy + 1, 30, 30, metalMedium);
+                    // Small cyan computer screen in middle
+                    ImageDrawRectangle(&img, ox + 6, oy + 6, 20, 12, (Color){ 32, 35, 40, 255 });
+                    ImageDrawRectangleLines(&img, (Rectangle){ (float)(ox + 6), (float)(oy + 6), 20.0f, 12.0f }, 1, cyanGlow);
+                    // Blinking scanlines on the screen
+                    ImageDrawLine(&img, ox + 8, oy + 9, ox + 23, oy + 9, Fade(cyanGlow, 0.6f));
+                    ImageDrawLine(&img, ox + 10, oy + 13, ox + 21, oy + 13, Fade(cyanGlow, 0.4f));
+                    // Status LEDs below screen
+                    ImageDrawCircle(&img, ox + 8, oy + 24, 2, redGlow);
+                    ImageDrawCircle(&img, ox + 16, oy + 24, 2, greenGlow);
+                    ImageDrawCircle(&img, ox + 24, oy + 24, 2, cyanGlow);
+                }
+                else if (tx == 2) {
+                    // Hazard Wall or Circular venting port
+                    ImageDrawRectangle(&img, ox + 1, oy + 1, 30, 30, metalMedium);
+                    // Circular exhaust vent
+                    ImageDrawCircle(&img, ox + 16, oy + 16, 11, metalDark);
+                    ImageDrawCircle(&img, ox + 16, oy + 16, 9, metalMedium);
+                    // Vent fins
+                    for (int a = 0; a < 4; a++) {
+                        ImageDrawLine(&img, ox + 16 - 8 + a * 4, oy + 16 - 5, ox + 16 - 8 + a * 4, oy + 16 + 5, metalDark);
+                    }
+                    ImageDrawCircleLines(&img, ox + 16, oy + 16, 9, metalLight);
+                    // Corner rivets
+                    ImageDrawPixel(&img, ox + 3, oy + 3, metalLight);
+                    ImageDrawPixel(&img, ox + 28, oy + 3, metalLight);
+                    ImageDrawPixel(&img, ox + 3, oy + 28, metalLight);
+                    ImageDrawPixel(&img, ox + 28, oy + 28, metalLight);
+                }
+            }
+            else if (ty >= 2 && ty < 4 && tx < 3) {
+                // --- Spaceship Floors (Row 2-3, Cols 0-2) ---
+                if (tx == 0) {
+                    // Metal floor plate with heavy grid paneling
+                    ImageDrawRectangle(&img, ox, oy, 32, 32, metalMedium);
+                    // Grid lines
+                    ImageDrawRectangleLines(&img, (Rectangle){ (float)ox, (float)oy, 32.0f, 32.0f }, 1, metalLight);
+                    ImageDrawRectangleLines(&img, (Rectangle){ (float)(ox + 1), (float)(oy + 1), 30.0f, 30.0f }, 1, metalDark);
+                    // Inner grooves
+                    ImageDrawLine(&img, ox + 8, oy + 8, ox + 24, oy + 8, metalDark);
+                    ImageDrawLine(&img, ox + 8, oy + 24, ox + 24, oy + 24, metalDark);
+                    ImageDrawLine(&img, ox + 8, oy + 8, ox + 8, oy + 24, metalDark);
+                    ImageDrawLine(&img, ox + 24, oy + 8, ox + 24, oy + 24, metalDark);
+                }
+                else if (tx == 1) {
+                    // Steel floor grate / venting tile
+                    ImageDrawRectangle(&img, ox, oy, 32, 32, metalBase);
+                    // Dark parallel slot vents
+                    for (int i = 4; i < 28; i += 6) {
+                        ImageDrawRectangle(&img, ox + i, oy + 4, 3, 24, metalDark);
+                        ImageDrawRectangle(&img, ox + i + 1, oy + 5, 1, 22, (Color){ 32, 32, 35, 255 });
+                    }
+                    // Border highlighting
+                    ImageDrawRectangleLines(&img, (Rectangle){ (float)ox, (float)oy, 32.0f, 32.0f }, 1, metalDark);
+                }
+                else if (tx == 2) {
+                    // Floor tile with hazard stripes & light strip
+                    ImageDrawRectangle(&img, ox, oy, 32, 32, metalMedium);
+                    // Draw hazard stripes on left and right borders
+                    for (int hs = 0; hs < 32; hs += 6) {
+                        // Left hazard
+                        ImageDrawLine(&img, ox, oy + hs, ox + 6, oy + hs + 6, hazardYellow);
+                        ImageDrawLine(&img, ox, oy + hs + 1, ox + 6, oy + hs + 7, hazardYellow);
+                        // Right hazard
+                        ImageDrawLine(&img, ox + 26, oy + hs, ox + 31, oy + hs + 6, hazardYellow);
+                        ImageDrawLine(&img, ox + 26, oy + hs + 1, ox + 31, oy + hs + 7, hazardYellow);
+                    }
+                    // Center light strip
+                    ImageDrawRectangle(&img, ox + 14, oy, 4, 32, metalDark);
+                    ImageDrawRectangle(&img, ox + 15, oy, 2, 32, cyanGlow);
+                }
+            }
+            else {
+                // Fill the rest with general metal textures (background/other spaces)
+                ImageDrawRectangle(&img, ox, oy, 32, 32, metalDark);
+                ImageDrawRectangleLines(&img, (Rectangle){ (float)ox, (float)oy, 32.0f, 32.0f }, 1, metalBase);
+            }
+        }
+    }
+    
+    // Clean background and export
+    CleanImageBackground(&img, BLACK);
+    ExportImage(img, "spaceship_spritesheet.png");
+    ExportImage(img, "../spaceship_spritesheet.png");
+    Texture2D tex = LoadTextureFromImage(img);
+    UnloadImage(img);
+    SetTextureFilter(tex, TEXTURE_FILTER_POINT);
+    return tex;
+}
+
 Texture2D GenerateMonitorTexture() {
+
     Image img = GenImageColor(64, 64, (Color){ 5, 20, 10, 255 });
     for (int y = 0; y < 64; y += 2) {
         ImageDrawLine(&img, 0, y, 64, y, (Color){ 10, 40, 20, 100 });
@@ -1820,13 +2104,28 @@ void GenerateProceduralDungeon() {
         
         if (rx == startX && ry == startY) continue;
         
-        r.numPillars = GetRandomValue(1, 3);
+        r.numPillars = GetRandomValue(0, 2);
+        // Place pillars symmetrically away from center and doors
+        static const Vector3 pillarCandidates[] = {
+            { -4.0f, 2.0f, -4.0f }, {  4.0f, 2.0f, -4.0f },
+            { -4.0f, 2.0f,  4.0f }, {  4.0f, 2.0f,  4.0f },
+            { -6.0f, 2.0f,  0.0f }, {  6.0f, 2.0f,  0.0f },
+            {  0.0f, 2.0f, -6.0f }, {  0.0f, 2.0f,  6.0f },
+        };
+        int numCandidates = (int)(sizeof(pillarCandidates) / sizeof(pillarCandidates[0]));
+        // Shuffle a small random selection
+        int chosen[8]; int nc = 0;
+        for (int c = 0; c < numCandidates && nc < r.numPillars; c++) {
+            if (GetRandomValue(0, 1) == 0) { chosen[nc++] = c; }
+        }
+        // Fill remaining if not enough chosen
+        for (int c = 0; nc < r.numPillars && c < numCandidates; c++) {
+            bool already = false;
+            for (int x = 0; x < nc; x++) if (chosen[x] == c) { already = true; break; }
+            if (!already) chosen[nc++] = c;
+        }
         for (int p = 0; p < r.numPillars; p++) {
-            r.pillars[p] = (Vector3){
-                (float)GetRandomValue(-3, 3) * 2.0f,
-                2.0f,
-                (float)GetRandomValue(-3, 3) * 2.0f
-            };
+            r.pillars[p] = pillarCandidates[chosen[p]];
         }
         
         if (r.type == ROOM_ENEMY) {
@@ -2262,6 +2561,7 @@ int main(void) {
     
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
     InitWindow(screenWidth, screenHeight, "PROJECT: DEHUMANIZER - Spaceship Rogue 2.5D");
+    InitAudioDevice();
     
     Camera3D camera = { 0 };
     camera.position = (Vector3){ 0.0f, 16.0f, 13.5f };
@@ -2272,10 +2572,69 @@ int main(void) {
     
     Texture2D charSpritesheet = GenerateProceduralSpritesheet();
     Texture2D envSpritesheet = GenerateEnvironmentTileSheet();
+    Texture2D spaceshipSpritesheet = GenerateSpaceshipTileSheet();
     Texture2D monitorTexture = GenerateMonitorTexture();
     Texture2D pistolTexture = GeneratePistolTexture();
     Texture2D portalTexture = GeneratePortalTexture();
     InitStarfield();
+    
+    // Load enemy animation sets (3 types: Kamikaze, Sentry, Spreader)
+    EnemyAnimSet enemyAnimSets[3] = {};
+    enemyAnimSets[ENEMY_KAMIKAZE] = LoadEnemyAnimSet("enemies-vampire");
+    enemyAnimSets[ENEMY_SENTRY]   = LoadEnemyAnimSet("enemies-skeleton1");
+    enemyAnimSets[ENEMY_SPREADER] = LoadEnemyAnimSet("enemies-skeleton2");
+    
+    // Load music streams
+    Music musicTitle   = {0};
+    Music musicGameplay = {0};
+    Music musicBoss    = {0};
+    
+    auto LoadMusicOrNull = [](const char* path) -> Music {
+        char p1[256], p2[256];
+        snprintf(p1, 256, "%s", path);
+        snprintf(p2, 256, "../%s", path);
+        if (FileExists(p1)) return LoadMusicStream(p1);
+        if (FileExists(p2)) return LoadMusicStream(p2);
+        return (Music){0};
+    };
+    
+    musicTitle    = LoadMusicOrNull("LOBBY.mp3");
+    musicGameplay = LoadMusicOrNull("NIVELES.mp3");
+    musicBoss     = LoadMusicOrNull("BOSS.mp3");
+    
+    if (musicTitle.stream.buffer)    SetMusicVolume(musicTitle, 0.6f);
+    if (musicGameplay.stream.buffer) SetMusicVolume(musicGameplay, 0.55f);
+    if (musicBoss.stream.buffer)     SetMusicVolume(musicBoss, 0.7f);
+    
+    Music* currentMusic = nullptr;
+    
+    // Load space background textures
+    Texture2D spaceBgTitle   = {0};
+    Texture2D spaceBgPlanet[4];
+    for (int i = 0; i < 4; i++) spaceBgPlanet[i] = {0};
+    
+    auto LoadSpaceBg = [](const char* path) -> Texture2D {
+        char p1[256], p2[256];
+        snprintf(p1, 256, "%s", path);
+        snprintf(p2, 256, "../%s", path);
+        if (FileExists(p1)) {
+            Texture2D t = LoadTexture(p1);
+            SetTextureFilter(t, TEXTURE_FILTER_BILINEAR);
+            return t;
+        }
+        if (FileExists(p2)) {
+            Texture2D t = LoadTexture(p2);
+            SetTextureFilter(t, TEXTURE_FILTER_BILINEAR);
+            return t;
+        }
+        return (Texture2D){0};
+    };
+    
+    spaceBgTitle       = LoadSpaceBg("space_backgrounds/Large 1024x1024/Starfields/Starfield_01-1024x1024.png");
+    spaceBgPlanet[0]   = LoadSpaceBg("space_backgrounds/Large 1024x1024/Blue Nebula/Blue_Nebula_01-1024x1024.png");
+    spaceBgPlanet[1]   = LoadSpaceBg("space_backgrounds/Large 1024x1024/Blue Nebula/Blue_Nebula_03-1024x1024.png");
+    spaceBgPlanet[2]   = LoadSpaceBg("space_backgrounds/Large 1024x1024/Green Nebula/Green_Nebula_01-1024x1024.png");
+    spaceBgPlanet[3]   = LoadSpaceBg("space_backgrounds/Large 1024x1024/Purple Nebula/Purple_Nebula_01-1024x1024.png");
     
     Mesh cubeMesh = GenMeshCube(1.0f, 1.0f, 1.0f);
     Model cubeModel = LoadModelFromMesh(cubeMesh);
@@ -2314,7 +2673,7 @@ int main(void) {
         motherShip.armory.baseDamageMultiplier = 1.0f + (motherShip.armory.level - 1) * 0.225f;
         motherShip.engineRoom.gravityStabilization = (motherShip.engineRoom.level == 1) ? 0.0f : (motherShip.engineRoom.level == 2) ? 0.15f : 0.40f;
 
-        player.position = (Vector3){ 0.0f, 1.0f, 3.0f };
+        player.position = (Vector3){ 0.0f, 1.0f, 7.5f };
         player.radius = 0.5f;
         player.speed = 6.8f;
         player.state = STATE_IDLE;
@@ -2392,6 +2751,51 @@ int main(void) {
         float dt = GetFrameTime();
         if (dt > 0.1f) dt = 0.1f;
         
+        // --- MUSIC MANAGEMENT ---
+        {
+            Music* desiredMusic = nullptr;
+            if (currentScreen == SCREEN_TITLE || currentScreen == SCREEN_INTRO || currentScreen == SCREEN_NEXUS) {
+                if (musicTitle.stream.buffer) desiredMusic = &musicTitle;
+            } else if (currentScreen == SCREEN_GAMEPLAY || currentScreen == SCREEN_ROOM_TRANSITION || currentScreen == SCREEN_GAMEOVER || currentScreen == SCREEN_VICTORY) {
+                Room& _mr = dungeon[currentRoomY][currentRoomX];
+                if (_mr.type == ROOM_BOSS && musicBoss.stream.buffer) desiredMusic = &musicBoss;
+                else if (musicGameplay.stream.buffer) desiredMusic = &musicGameplay;
+            }
+            if (desiredMusic != currentMusic) {
+                if (currentMusic && currentMusic->stream.buffer) StopMusicStream(*currentMusic);
+                currentMusic = desiredMusic;
+                if (currentMusic && currentMusic->stream.buffer) PlayMusicStream(*currentMusic);
+            }
+            if (currentMusic && currentMusic->stream.buffer) UpdateMusicStream(*currentMusic);
+        }
+        
+        // Handle Gamepad virtual mouse cursor movement
+        if (IsGamepadAvailable(0)) {
+            float gpCursorX = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
+            float gpCursorY = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y);
+            float gpRightX = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_X);
+            float gpRightY = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_Y);
+            
+            if (fabsf(gpRightX) > 0.15f) gpCursorX = gpRightX;
+            if (fabsf(gpRightY) > 0.15f) gpCursorY = gpRightY;
+            
+            bool isOverlayOpen = (currentScreen == SCREEN_NEXUS && activeNexusOverlay != 0);
+            bool isTitleOrIntro = (currentScreen == SCREEN_TITLE || currentScreen == SCREEN_INTRO);
+            
+            if (isTitleOrIntro || isOverlayOpen) {
+                if (fabsf(gpCursorX) > 0.15f || fabsf(gpCursorY) > 0.15f) {
+                    Vector2 mPos = GetMousePosition();
+                    mPos.x += gpCursorX * 600.0f * dt;
+                    mPos.y += gpCursorY * 600.0f * dt;
+                    if (mPos.x < 0) mPos.x = 0;
+                    if (mPos.x > (float)screenWidth) mPos.x = (float)screenWidth;
+                    if (mPos.y < 0) mPos.y = 0;
+                    if (mPos.y > (float)screenHeight) mPos.y = (float)screenHeight;
+                    SetMousePosition((int)mPos.x, (int)mPos.y);
+                }
+            }
+        }
+        
         if (currentScreen == SCREEN_TITLE || currentScreen == SCREEN_INTRO) {
             // Slowly rotate the camera around the origin for a cool cinematic space-drift effect
             float time = (float)GetTime() * 0.06f;
@@ -2415,7 +2819,8 @@ int main(void) {
                 Rectangle btnHard = { (float)(screenWidth / 2 - btnW / 2), (float)(startY + 84), (float)btnW, (float)btnH };
                 Rectangle btnStart = { (float)(screenWidth / 2 - 160), (float)(startY + 150), 320.0f, 45.0f };
                 
-                if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                bool leftClick = IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN));
+                if (leftClick) {
                     if (CheckCollisionPointRec(mousePos, btnEasy)) selectedDifficulty = DIFF_EASY;
                     if (CheckCollisionPointRec(mousePos, btnNorm)) selectedDifficulty = DIFF_NORMAL;
                     if (CheckCollisionPointRec(mousePos, btnHard)) selectedDifficulty = DIFF_HARD;
@@ -2424,13 +2829,13 @@ int main(void) {
                     }
                 }
                 
-                if (IsKeyPressed(KEY_ENTER)) {
+                if (IsKeyPressed(KEY_ENTER) || (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT))) {
                     ChangeState(SCREEN_NEXUS);
                 }
             }
             else { // SCREEN_INTRO
                 introTimer += dt;
-                if (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                if (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || (IsGamepadAvailable(0) && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN) || IsGamepadButtonPressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT)))) {
                     ResetGame();
                     ChangeState(SCREEN_GAMEPLAY);
                 }
@@ -2488,6 +2893,13 @@ int main(void) {
                 if (IsKeyDown(KEY_A)) moveVector.x -= 1.0f;
                 if (IsKeyDown(KEY_D)) moveVector.x += 1.0f;
                 
+                if (IsGamepadAvailable(0)) {
+                    float gpX = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
+                    float gpZ = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y);
+                    if (fabsf(gpX) > 0.15f) moveVector.x += gpX;
+                    if (fabsf(gpZ) > 0.15f) moveVector.z += gpZ;
+                }
+                
                 if (Vector3Length(moveVector) > 0.0f) {
                     moveVector = Vector3Normalize(moveVector);
                     player.position = Vector3Add(player.position, Vector3Scale(moveVector, 5.2f * dt));
@@ -2512,7 +2924,8 @@ int main(void) {
                 camera.target = Vector3Lerp(camera.target, player.position, 8.0f * dt);
                 
                 // Interaction trigger
-                if (IsKeyPressed(KEY_E)) {
+                bool interactionPressed = IsKeyPressed(KEY_E) || (IsGamepadAvailable(0) && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_LEFT) || IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)));
+                if (interactionPressed) {
                     if (distGreenhouse < 2.0f) {
                         activeNexusOverlay = 1;
                         activeLeftTab = 0;
@@ -2531,7 +2944,8 @@ int main(void) {
                 }
             } else {
                 // If menu is open, handle closing
-                if (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_E)) {
+                bool closeMenuPressed = IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_E) || (IsGamepadAvailable(0) && (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_LEFT) || IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT)));
+                if (closeMenuPressed) {
                     activeNexusOverlay = 0;
                 }
                 
@@ -2547,7 +2961,8 @@ int main(void) {
                 camera.target = Vector3Lerp(camera.target, consoleCamTarget, 8.0f * dt);
                 
                 // Handle click checks
-                if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                bool leftClick = IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN));
+                if (leftClick) {
                     if (activeNexusOverlay == 1) {
                         // Tab Selection
                         if (CheckCollisionPointRec(mousePos, btnTabModules)) activeLeftTab = 0;
@@ -2931,6 +3346,13 @@ int main(void) {
             if (IsKeyDown(KEY_A)) moveVector.x -= 1.0f;
             if (IsKeyDown(KEY_D)) moveVector.x += 1.0f;
             
+            if (IsGamepadAvailable(0)) {
+                float gpX = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
+                float gpZ = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_Y);
+                if (fabsf(gpX) > 0.15f) moveVector.x += gpX;
+                if (fabsf(gpZ) > 0.15f) moveVector.z += gpZ;
+            }
+            
             // Speed modifications based on gravity, boots, ground friction and relics
             float baseSpeed = 6.8f;
             if (hasThrusterBoots) baseSpeed = 9.2f;
@@ -3132,11 +3554,30 @@ int main(void) {
             }
             
             // --- SHOOT LOGIC ---
+            bool gpShooting = false;
+            Vector3 gpAimDir = { 0 };
+            if (IsGamepadAvailable(0)) {
+                // Right stick shooting
+                float fireX = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_X);
+                float fireZ = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_Y);
+                if (sqrtf(fireX * fireX + fireZ * fireZ) > 0.35f) {
+                    gpAimDir = (Vector3){ fireX, 0.0f, fireZ };
+                    gpShooting = true;
+                }
+                
+                // Face buttons shooting (Y=Up, A=Down, X=Left, B=Right)
+                if (IsGamepadButtonDown(0, GAMEPAD_BUTTON_RIGHT_FACE_UP)) { gpAimDir.z = -1.0f; gpShooting = true; }
+                if (IsGamepadButtonDown(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) { gpAimDir.z = 1.0f; gpShooting = true; }
+                if (IsGamepadButtonDown(0, GAMEPAD_BUTTON_RIGHT_FACE_LEFT)) { gpAimDir.x = -1.0f; gpShooting = true; }
+                if (IsGamepadButtonDown(0, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT)) { gpAimDir.x = 1.0f; gpShooting = true; }
+            }
+            
             Vector3 groundAim = GetMouseGroundIntersection(camera);
-            Vector3 aimDir = Vector3Subtract(groundAim, player.position);
+            Vector3 aimDir = gpShooting ? gpAimDir : Vector3Subtract(groundAim, player.position);
             aimDir.y = 0.0f;
             
-            if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && player.state != STATE_HURT && player.activeWeapon.currentCooldownTimer <= 0.0f) {
+            bool shootTriggered = IsMouseButtonDown(MOUSE_BUTTON_LEFT) || gpShooting;
+            if (shootTriggered && player.state != STATE_HURT && player.activeWeapon.currentCooldownTimer <= 0.0f) {
                 if (Vector3Length(aimDir) > 0.0f) {
                     Vector3 fireDir = Vector3Normalize(aimDir);
                     
@@ -3725,15 +4166,40 @@ int main(void) {
             SetShaderValue(tachyonShader, blurLoc, &blur, SHADER_UNIFORM_FLOAT);
         }
         
+        BeginDrawing();
         bool useRenderTarget = (activeShader.id > 0);
         
         if (useRenderTarget) {
             BeginTextureMode(targetTex);
-        } else {
-            BeginDrawing();
         }
         
         ClearBackground((Color){ 6, 6, 12, 255 }); // space void background
+        
+        // Draw space background texture if loaded
+        {
+            Texture2D* bgTex = nullptr;
+            if (currentScreen == SCREEN_TITLE || currentScreen == SCREEN_NEXUS || currentScreen == SCREEN_INTRO) {
+                if (spaceBgTitle.id > 0) bgTex = &spaceBgTitle;
+            } else if (currentScreen == SCREEN_GAMEPLAY || currentScreen == SCREEN_ROOM_TRANSITION || currentScreen == SCREEN_GAMEOVER || currentScreen == SCREEN_VICTORY) {
+                int pIdx = (selectedPlanetIdx >= 0 && selectedPlanetIdx < 4) ? selectedPlanetIdx : 0;
+                if (spaceBgPlanet[pIdx].id > 0) bgTex = &spaceBgPlanet[pIdx];
+            }
+            if (bgTex && bgTex->id > 0) {
+                float tw = (float)bgTex->width;
+                float th = (float)bgTex->height;
+                float scrollX = fmodf(fabsf(camera.position.x) * 12.0f, tw);
+                float scrollZ = fmodf(fabsf(camera.position.z) * 12.0f, th);
+                float srcW = (float)screenWidth;
+                float srcH = (float)screenHeight;
+                if (scrollX + srcW > tw) srcW = tw - scrollX;
+                if (scrollZ + srcH > th) srcH = th - scrollZ;
+                DrawTexturePro(*bgTex,
+                    (Rectangle){ scrollX, scrollZ, srcW, srcH },
+                    (Rectangle){ 0, 0, (float)screenWidth, (float)screenHeight },
+                    (Vector2){ 0, 0 }, 0.0f, (Color){ 255, 255, 255, 200 });
+            }
+        }
+
             
             if (currentScreen == SCREEN_TITLE) {
                 // 1. Draw Starfield background in 3D
@@ -3842,6 +4308,10 @@ int main(void) {
                 Vector3 iaPos = { 0.0f, 1.0f, -1.0f };
                 Vector3 sciNPC_Pos = { -3.0f, 1.0f, 2.0f };
                 Vector3 soldNPC_Pos = { 3.0f, 1.0f, 2.0f };
+                Vector3 portalCenter = { 0.0f, 1.2f, -4.5f };
+                float portalRadius = 1.1f;
+                Rectangle sciSrc = { 0.0f, 3.0f * 32.0f, 32.0f, 32.0f };
+                Rectangle soldSrc = { 0.0f, 4.0f * 32.0f, 32.0f, 32.0f };
                 
                 float distGreenhouse = Vector3Distance(player.position, greenhousePos);
                 float distArmory = Vector3Distance(player.position, armoryPos);
@@ -3896,7 +4366,103 @@ int main(void) {
                     }
                     rlEnableDepthMask();
                     
-                    // B. Spaceship cockpit floor grid (metallic grey compartments)
+                    // --- REFLECTION PASS (Draw mirrored, upside-down versions under the floor y=0) ---
+                    // Portal Frame Arch (octagon of 12 blocks) - Reflected
+                    Color refPortalTint = Fade((Color){ 70, 80, 95, 255 }, 0.45f);
+                    for (int i = 0; i < 12; i++) {
+                        float angle = (float)i * (360.0f / 12.0f) * DEG2RAD;
+                        Vector3 blockPos = {
+                            portalCenter.x + cosf(angle) * portalRadius,
+                            -(portalCenter.y + sinf(angle) * portalRadius), // Reflected Y
+                            portalCenter.z
+                        };
+                        DrawSpaceshipWallBlock(spaceshipSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, blockPos, (Vector3){ 0.25f, 0.25f, 0.25f }, refPortalTint);
+                    }
+                    // Swirling portal vortex - Reflected
+                    rlPushMatrix();
+                        rlTranslatef(portalCenter.x, -portalCenter.y, portalCenter.z); // Reflected Y
+                        rlRotatef((float)GetTime() * -90.0f, 0.0f, 0.0f, 1.0f);
+                        rlScalef(1.0f, -1.0f, 1.0f); // Flip Y
+                        rlSetTexture(portalTexture.id);
+                        rlBegin(RL_QUADS);
+                            rlColor4ub(255, 255, 255, 100);
+                            float portalSize = portalRadius * 1.8f;
+                            float u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 1.0f;
+                            rlNormal3f(0.0f, 0.0f, 1.0f);
+                            rlTexCoord2f(u0, v0); rlVertex3f(-portalSize/2, -portalSize/2, 0.0f);
+                            rlTexCoord2f(u1, v0); rlVertex3f(portalSize/2, -portalSize/2, 0.0f);
+                            rlTexCoord2f(u1, v1); rlVertex3f(portalSize/2, portalSize/2, 0.0f);
+                            rlTexCoord2f(u0, v1); rlVertex3f(-portalSize/2, portalSize/2, 0.0f);
+                        rlEnd();
+                        rlSetTexture(0);
+                    rlPopMatrix();
+
+                    // Upgrade Terminal (Greenhouse replacement) - Reflected
+                    Color refTermTint = Fade((Color){ 60, 65, 70, 255 }, 0.45f);
+                    DrawSpaceshipWallBlock(spaceshipSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ -4.5f, -0.2f, -2.0f }, (Vector3){ 1.2f, 0.4f, 0.8f }, refTermTint);
+                    DrawSpaceshipWallBlock(spaceshipSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ -4.5f, -0.5f, -2.0f }, (Vector3){ 0.15f, 0.2f, 0.15f }, Fade((Color){ 100, 105, 110, 255 }, 0.45f));
+                    DrawSpaceshipWallBlock(spaceshipSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ -4.5f, -0.9f, -2.0f }, (Vector3){ 1.0f, 0.6f, 0.15f }, Fade((Color){ 30, 30, 35, 255 }, 0.45f));
+                    DrawSpaceshipWallBlock(monitorTexture, (Rectangle){ 0.0f, 0.0f, (float)monitorTexture.width, -(float)monitorTexture.height }, (Vector3){ -4.5f, -0.9f, -1.91f }, (Vector3){ 0.9f, 0.5f, 0.04f }, Fade(WHITE, 0.45f));
+
+                    // Weapon Terminal - Reflected
+                    DrawSpaceshipWallBlock(spaceshipSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ 4.5f, -0.2f, -2.0f }, (Vector3){ 1.0f, 0.4f, 1.0f }, Fade((Color){ 40, 40, 45, 255 }, 0.45f));
+                    // Floating & rotating gun - Reflected
+                    rlPushMatrix();
+                        rlTranslatef(4.5f, -(1.1f + sinf((float)GetTime() * 3.0f) * 0.05f), -2.0f);
+                        rlRotatef((float)GetTime() * 45.0f, 0.0f, 1.0f, 0.0f);
+                        rlScalef(1.0f, -1.0f, 1.0f); // Flip Y
+                        DrawSpaceshipWallBlock(pistolTexture, (Rectangle){ 0.0f, 0.0f, (float)pistolTexture.width, (float)pistolTexture.height }, (Vector3){ 0.1f, 0.0f, 0.0f }, (Vector3){ 0.6f, 0.16f, 0.12f }, Fade(WHITE, 0.45f));
+                        DrawSpaceshipWallBlock(pistolTexture, (Rectangle){ 0.0f, 0.0f, (float)pistolTexture.width, (float)pistolTexture.height }, (Vector3){ -0.15f, -0.18f, 0.0f }, (Vector3){ 0.15f, 0.3f, 0.1f }, Fade(WHITE, 0.45f));
+                        DrawSpaceshipWallBlock(pistolTexture, (Rectangle){ 0.0f, 0.0f, (float)pistolTexture.width, (float)pistolTexture.height }, (Vector3){ 0.0f, 0.12f, 0.0f }, (Vector3){ 0.3f, 0.08f, 0.08f }, Fade(LIME, 0.45f));
+                    rlPopMatrix();
+
+                    // IA Holographic Projector - Reflected
+                    DrawSphere((Vector3){ 0.0f, -0.9f, -1.0f }, 0.15f + sinf((float)GetTime() * 4.0f) * 0.03f, Fade(CYAN, 0.4f));
+
+                    // NPCs Reflected
+                    Rectangle sciRefSrc = { sciSrc.x, sciSrc.y, sciSrc.width, -sciSrc.height };
+                    DrawExtrudedBillboardRec(camera, charSpritesheet, sciRefSrc, (Vector3){ sciNPC_Pos.x, -(sciNPC_Pos.y - 0.2f), sciNPC_Pos.z }, (Vector2){ 1.8f, 1.8f }, Fade(WHITE, 0.45f));
+                    Rectangle soldRefSrc = { soldSrc.x, soldSrc.y, soldSrc.width, -soldSrc.height };
+                    DrawExtrudedBillboardRec(camera, charSpritesheet, soldRefSrc, (Vector3){ soldNPC_Pos.x, -(soldNPC_Pos.y - 0.2f), soldNPC_Pos.z }, (Vector2){ 1.8f, 1.8f }, Fade(WHITE, 0.45f));
+
+                    // Player Reflected
+                    if (player.health > 0.0f || playerHalfHeartsHealth > 0) {
+                        int legRow = (player.direction.z < 0.0f) ? 2 : 1;
+                        Rectangle legRefSrc = { (float)player.animFrame * 32.0f, (float)legRow * 32.0f, 32.0f, -32.0f };
+                        Vector3 legRefPos = { player.position.x, -(player.position.y - 0.2f), player.position.z };
+                        DrawExtrudedBillboardRec(camera, charSpritesheet, legRefSrc, legRefPos, (Vector2){ 1.8f, 1.8f }, Fade(WHITE, 0.45f));
+                        
+                        int headState = HEAD_LOOK_DOWN;
+                        bool flipHead = (player.direction.x > 0.0f);
+                        if (player.direction.z < -0.5f) {
+                            headState = HEAD_LOOK_UP;
+                        } else if (fabsf(player.direction.x) > 0.5f) {
+                            headState = HEAD_LOOK_LEFT;
+                        }
+                        Rectangle headRefSrc = { 
+                            (float)headState * 32.0f, 
+                            0.0f, 
+                            flipHead ? -32.0f : 32.0f,
+                            -32.0f 
+                        };
+                        
+                        Vector3 camToPos = Vector3Subtract(player.position, camera.position);
+                        Vector3 depthDir = { camToPos.x, 0.0f, camToPos.z };
+                        if (Vector3Length(depthDir) > 0.1f) {
+                            depthDir = Vector3Normalize(depthDir);
+                        } else {
+                            depthDir = (Vector3){ 0.0f, 0.0f, -1.0f };
+                        }
+                        Vector3 headRefPos = { 
+                            player.position.x - depthDir.x * 0.15f, 
+                            -(player.position.y + 0.6f), 
+                            player.position.z - depthDir.z * 0.15f 
+                        };
+                        DrawExtrudedBillboardRec(camera, charSpritesheet, headRefSrc, headRefPos, (Vector2){ 1.8f, 1.8f }, Fade(WHITE, 0.45f));
+                    }
+
+                    // --- FLOOR RENDER ---
+                    // B. Spaceship cockpit floor grid (metallic grey compartments with reflection overlay)
                     for (int z = -6; z <= 6; z++) {
                         for (int x = -6; x <= 6; x++) {
                             // Select dynamic texture variant from Sector 0 floors (columns 0-2, rows 2-3)
@@ -3907,7 +4473,7 @@ int main(void) {
                             int localCol = h % 3;
                             int localRow = (h / 3) % 2;
                             Rectangle floorSrc = { (float)localCol * 32.0f, (2.0f + (float)localRow) * 32.0f, 32.0f, 32.0f };
-                            DrawFloorTile(envSpritesheet, floorSrc, (Vector3){ (float)x, 0.0f, (float)z }, (Vector2){ 1.0f, 1.0f }, (Color){ 70, 75, 80, 255 });
+                            DrawSpaceshipFloorTile(spaceshipSpritesheet, floorSrc, (Vector3){ (float)x, 0.0f, (float)z }, (Vector2){ 1.0f, 1.0f }, (Color){ 160, 175, 190, 200 });
                         }
                     }
                     
@@ -3926,13 +4492,13 @@ int main(void) {
                         
                         // Back wall (cockpit viewport)
                         if (x == -7 || x == 7) {
-                            DrawWallBlock(envSpritesheet, GetWallSrc((float)x, 2.0f, -7.0f), (Vector3){ (float)x, 2.0f, -7.0f }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 45, 50, 55, 255 });
+                            DrawSpaceshipWallBlock(spaceshipSpritesheet, GetWallSrc((float)x, 2.0f, -7.0f), (Vector3){ (float)x, 2.0f, -7.0f }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 150, 155, 165, 255 });
                         } else {
                             // low border under front viewport window
-                            DrawWallBlock(envSpritesheet, GetWallSrc((float)x, 0.5f, -7.0f), (Vector3){ (float)x, 0.5f, -7.0f }, (Vector3){ 1.0f, 1.0f, 1.0f }, (Color){ 55, 60, 65, 255 });
+                            DrawSpaceshipWallBlock(spaceshipSpritesheet, GetWallSrc((float)x, 0.5f, -7.0f), (Vector3){ (float)x, 0.5f, -7.0f }, (Vector3){ 1.0f, 1.0f, 1.0f }, (Color){ 160, 165, 175, 255 });
                         }
                         // Front entrance wall
-                        DrawWallBlock(envSpritesheet, GetWallSrc((float)x, 2.0f, 7.0f), (Vector3){ (float)x, 2.0f, 7.0f }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 50, 55, 60, 255 });
+                        DrawSpaceshipWallBlock(spaceshipSpritesheet, GetWallSrc((float)x, 2.0f, 7.0f), (Vector3){ (float)x, 2.0f, 7.0f }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 155, 160, 170, 255 });
                     }
                     // Left and right walls
                     for (int z = -6; z <= 6; z++) {
@@ -3945,27 +4511,27 @@ int main(void) {
                             int localRow = (h / 3) % 2;
                             return (Rectangle){ (float)localCol * 32.0f, (float)localRow * 32.0f, 32.0f, 32.0f };
                         };
-                        DrawWallBlock(envSpritesheet, GetWallSrc(-7.0f, 2.0f, (float)z), (Vector3){ -7.0f, 2.0f, (float)z }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 50, 55, 60, 255 });
-                        DrawWallBlock(envSpritesheet, GetWallSrc(7.0f, 2.0f, (float)z), (Vector3){ 7.0f, 2.0f, (float)z }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 50, 55, 60, 255 });
+                        DrawSpaceshipWallBlock(spaceshipSpritesheet, GetWallSrc(-7.0f, 2.0f, (float)z), (Vector3){ -7.0f, 2.0f, (float)z }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 155, 160, 170, 255 });
+                        DrawSpaceshipWallBlock(spaceshipSpritesheet, GetWallSrc(7.0f, 2.0f, (float)z), (Vector3){ 7.0f, 2.0f, (float)z }, (Vector3){ 1.0f, 4.0f, 1.0f }, (Color){ 155, 160, 170, 255 });
                     }
                     
                     // D. Interactive 3D modules
                     // Upgrade Terminal: 3D PC Monitor (Greenhouse replacement)
                     // Base Desk
-                    DrawWallBlock(envSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ -4.5f, 0.2f, -2.0f }, (Vector3){ 1.2f, 0.4f, 0.8f }, (Color){ 60, 65, 70, 255 });
+                    DrawSpaceshipWallBlock(spaceshipSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ -4.5f, 0.2f, -2.0f }, (Vector3){ 1.2f, 0.4f, 0.8f }, (Color){ 60, 65, 70, 255 });
                     // Monitor Stand/Support
-                    DrawWallBlock(envSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ -4.5f, 0.5f, -2.0f }, (Vector3){ 0.15f, 0.2f, 0.15f }, (Color){ 100, 105, 110, 255 });
+                    DrawSpaceshipWallBlock(spaceshipSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ -4.5f, 0.5f, -2.0f }, (Vector3){ 0.15f, 0.2f, 0.15f }, (Color){ 100, 105, 110, 255 });
                     // Monitor Frame
-                    DrawWallBlock(envSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ -4.5f, 0.9f, -2.0f }, (Vector3){ 1.0f, 0.6f, 0.15f }, (Color){ 30, 30, 35, 255 });
+                    DrawSpaceshipWallBlock(spaceshipSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ -4.5f, 0.9f, -2.0f }, (Vector3){ 1.0f, 0.6f, 0.15f }, (Color){ 30, 30, 35, 255 });
                     // Textured Monitor Screen (facing +z)
-                    DrawWallBlock(monitorTexture, (Rectangle){ 0.0f, 0.0f, (float)monitorTexture.width, (float)monitorTexture.height }, (Vector3){ -4.5f, 0.9f, -1.91f }, (Vector3){ 0.9f, 0.5f, 0.04f }, WHITE);
+                    DrawSpaceshipWallBlock(monitorTexture, (Rectangle){ 0.0f, 0.0f, (float)monitorTexture.width, (float)monitorTexture.height }, (Vector3){ -4.5f, 0.9f, -1.91f }, (Vector3){ 0.9f, 0.5f, 0.04f }, WHITE);
                     if (GetRandomValue(0, 100) < 6) {
                         SpawnParticles((Vector3){ -4.5f + (float)GetRandomValue(-2, 2) * 0.1f, 0.2f, -2.0f + (float)GetRandomValue(-2, 2) * 0.1f }, GREEN, 1);
                     }
                     
                     // Weapon Terminal: Floating, rotating 3D sci-fi Pistol
                     // Holographic Pedestal base
-                    DrawWallBlock(envSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ 4.5f, 0.2f, -2.0f }, (Vector3){ 1.0f, 0.4f, 1.0f }, (Color){ 40, 40, 45, 255 });
+                    DrawSpaceshipWallBlock(spaceshipSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, (Vector3){ 4.5f, 0.2f, -2.0f }, (Vector3){ 1.0f, 0.4f, 1.0f }, (Color){ 40, 40, 45, 255 });
                     DrawCylinder((Vector3){ 4.5f, 0.55f, -2.0f }, 0.4f, 0.4f, 0.3f, 16, Fade(RED, 0.3f));
                     DrawCylinderWires((Vector3){ 4.5f, 0.55f, -2.0f }, 0.4f, 0.4f, 0.3f, 16, RED);
                     // Floating & rotating gun
@@ -3973,11 +4539,11 @@ int main(void) {
                         rlTranslatef(4.5f, 1.1f + sinf((float)GetTime() * 3.0f) * 0.05f, -2.0f);
                         rlRotatef((float)GetTime() * 45.0f, 0.0f, 1.0f, 0.0f);
                         // Pistol Barrel (main body)
-                        DrawWallBlock(pistolTexture, (Rectangle){ 0.0f, 0.0f, (float)pistolTexture.width, (float)pistolTexture.height }, (Vector3){ 0.1f, 0.0f, 0.0f }, (Vector3){ 0.6f, 0.16f, 0.12f }, WHITE);
+                        DrawSpaceshipWallBlock(pistolTexture, (Rectangle){ 0.0f, 0.0f, (float)pistolTexture.width, (float)pistolTexture.height }, (Vector3){ 0.1f, 0.0f, 0.0f }, (Vector3){ 0.6f, 0.16f, 0.12f }, WHITE);
                         // Pistol Grip (handle)
-                        DrawWallBlock(pistolTexture, (Rectangle){ 0.0f, 0.0f, (float)pistolTexture.width, (float)pistolTexture.height }, (Vector3){ -0.15f, -0.18f, 0.0f }, (Vector3){ 0.15f, 0.3f, 0.1f }, WHITE);
+                        DrawSpaceshipWallBlock(pistolTexture, (Rectangle){ 0.0f, 0.0f, (float)pistolTexture.width, (float)pistolTexture.height }, (Vector3){ -0.15f, -0.18f, 0.0f }, (Vector3){ 0.15f, 0.3f, 0.1f }, WHITE);
                         // Laser scope sight
-                        DrawWallBlock(pistolTexture, (Rectangle){ 0.0f, 0.0f, (float)pistolTexture.width, (float)pistolTexture.height }, (Vector3){ 0.0f, 0.12f, 0.0f }, (Vector3){ 0.3f, 0.08f, 0.08f }, LIME);
+                        DrawSpaceshipWallBlock(pistolTexture, (Rectangle){ 0.0f, 0.0f, (float)pistolTexture.width, (float)pistolTexture.height }, (Vector3){ 0.0f, 0.12f, 0.0f }, (Vector3){ 0.3f, 0.08f, 0.08f }, LIME);
                         // Energy chamber cylinder
                         DrawCylinder((Vector3){ 0.1f, 0.0f, 0.0f }, 0.04f, 0.04f, 0.25f, 8, ORANGE);
                     rlPopMatrix();
@@ -3987,8 +4553,6 @@ int main(void) {
                     
                     // Level Entry Portal (replacing Navigation cylinder)
                     // Portal Frame Arch (octagon of 12 blocks)
-                    Vector3 portalCenter = { 0.0f, 1.2f, -4.5f };
-                    float portalRadius = 1.1f;
                     for (int i = 0; i < 12; i++) {
                         float angle = (float)i * (360.0f / 12.0f) * DEG2RAD;
                         Vector3 blockPos = {
@@ -3996,14 +4560,12 @@ int main(void) {
                             portalCenter.y + sinf(angle) * portalRadius,
                             portalCenter.z
                         };
-                        DrawWallBlock(envSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, blockPos, (Vector3){ 0.25f, 0.25f, 0.25f }, (Color){ 70, 80, 95, 255 });
+                        DrawSpaceshipWallBlock(spaceshipSpritesheet, (Rectangle){ 0.0f, 0.0f, 32.0f, 32.0f }, blockPos, (Vector3){ 0.25f, 0.25f, 0.25f }, (Color){ 70, 80, 95, 255 });
                     }
                     // Swirling portal vortex (rotating textured plane)
                     rlPushMatrix();
                         rlTranslatef(portalCenter.x, portalCenter.y, portalCenter.z);
                         rlRotatef((float)GetTime() * -90.0f, 0.0f, 0.0f, 1.0f);
-                        float portalSize = portalRadius * 1.8f;
-                        float u0 = 0.0f, v0 = 0.0f, u1 = 1.0f, v1 = 1.0f;
                         rlSetTexture(portalTexture.id);
                         rlBegin(RL_QUADS);
                             rlColor4ub(255, 255, 255, 220);
@@ -4039,11 +4601,9 @@ int main(void) {
                     
                     // E. Draw NPC Billboards
                     // Scientist (Row 3, Column 0)
-                    Rectangle sciSrc = { 0.0f, 3.0f * 32.0f, 32.0f, 32.0f };
                     DrawExtrudedBillboardRec(camera, charSpritesheet, sciSrc, (Vector3){ sciNPC_Pos.x, sciNPC_Pos.y - 0.2f, sciNPC_Pos.z }, (Vector2){ 1.8f, 1.8f }, WHITE);
                     
                     // Soldier (Row 4, Column 0)
-                    Rectangle soldSrc = { 0.0f, 4.0f * 32.0f, 32.0f, 32.0f };
                     DrawExtrudedBillboardRec(camera, charSpritesheet, soldSrc, (Vector3){ soldNPC_Pos.x, soldNPC_Pos.y - 0.2f, soldNPC_Pos.z }, (Vector2){ 1.8f, 1.8f }, WHITE);
                     
                     // F. Draw Player Clone Avatar
@@ -4912,28 +5472,69 @@ int main(void) {
                         Color tint = WHITE;
                         Vector2 size = enemy.isBoss ? (Vector2){ 3.2f, 3.2f } : (Vector2){ 1.8f, 1.8f };
                         
-                        // Select sprite row offset based on enemy arquetype
-                        int rowOffset = 3 + enemy.enemyType;
+                        int eType = (int)enemy.enemyType;
+                        bool hasAnimSet = (eType >= 0 && eType < 3 && enemyAnimSets[eType].loaded);
                         
-                        if (enemy.state == STATE_DEAD) {
-                            // explosion frame row 5
-                            int dFrame = (int)(enemy.stateTimer / 0.1f);
-                            if (dFrame > 3) dFrame = 3;
-                            srcRec = (Rectangle){ (float)dFrame * 32.0f, 5.0f * 32.0f, 32.0f, 32.0f };
+                        if (hasAnimSet) {
+                            // Use dedicated EnemyAnimSet spritesheets
+                            EnemyAnimSet &eas = enemyAnimSets[eType];
+                            Texture2D useTex = charSpritesheet; // fallback
+                            int frame = 0;
+                            float frameH = 32.0f;
+                            
+                            if (enemy.state == STATE_DEAD) {
+                                useTex = eas.death;
+                                frame = (int)(enemy.stateTimer / 0.08f);
+                                if (frame >= eas.deathFrames) frame = eas.deathFrames - 1;
+                                srcRec = (Rectangle){ (float)frame * 32.0f, 0.0f, 32.0f, (float)eas.death.height };
+                            } else if (enemy.state == STATE_ATTACK) {
+                                useTex = eas.attack;
+                                frame = 0;
+                                if (enemy.stateTimer >= 0.25f && enemy.stateTimer < 0.4f) frame = 1;
+                                else if (enemy.stateTimer >= 0.4f) frame = eas.attackFrames > 2 ? 2 : eas.attackFrames - 1;
+                                if (frame >= eas.attackFrames) frame = eas.attackFrames - 1;
+                                srcRec = (Rectangle){ (float)frame * 32.0f, 0.0f, 32.0f, (float)eas.attack.height };
+                            } else if (enemy.state == STATE_HURT) {
+                                useTex = eas.takeDamage;
+                                frame = ((int)(enemy.stateTimer * 15.0f)) % eas.takeDamageFrames;
+                                srcRec = (Rectangle){ (float)frame * 32.0f, 0.0f, 32.0f, (float)eas.takeDamage.height };
+                                tint = RED;
+                            } else if (enemy.state == STATE_RUN) {
+                                useTex = eas.movement;
+                                frame = enemy.animFrame % eas.movementFrames;
+                                srcRec = (Rectangle){ (float)frame * 32.0f, 0.0f, 32.0f, (float)eas.movement.height };
+                            } else {
+                                useTex = eas.idle;
+                                frame = ((int)(enemy.animTimer)) % eas.idleFrames;
+                                srcRec = (Rectangle){ (float)frame * 32.0f, 0.0f, 32.0f, (float)eas.idle.height };
+                            }
+                            
+                            // Scale size to match texture height
+                            float spriteAspect = (useTex.height > 0) ? (float)useTex.height / 32.0f : 1.0f;
+                            Vector2 animSize = { size.x, size.y * spriteAspect };
+                            Vector3 billPos = { enemy.position.x, enemy.position.y + (enemy.isBoss ? 0.3f : 0.1f), enemy.position.z };
+                            AddBillboardToRender(billPos, useTex, srcRec, animSize, tint, 1, camera);
+                        } else {
+                            // Fallback: use charSpritesheet
+                            int rowOffset = 3 + enemy.enemyType;
+                            
+                            if (enemy.state == STATE_DEAD) {
+                                int dFrame = (int)(enemy.stateTimer / 0.1f);
+                                if (dFrame > 3) dFrame = 3;
+                                srcRec = (Rectangle){ (float)dFrame * 32.0f, 5.0f * 32.0f, 32.0f, 32.0f };
+                            } else if (enemy.state == STATE_ATTACK) {
+                                int attFrame = 0;
+                                if (enemy.stateTimer >= 0.25f && enemy.stateTimer < 0.4f) attFrame = 1;
+                                else if (enemy.stateTimer >= 0.4f) attFrame = 2;
+                                srcRec = (Rectangle){ (float)attFrame * 32.0f, (float)rowOffset * 32.0f, 32.0f, 32.0f };
+                            } else {
+                                srcRec = (Rectangle){ (float)enemy.animFrame * 32.0f, (float)rowOffset * 32.0f, 32.0f, 32.0f };
+                                if (enemy.state == STATE_HURT) tint = RED;
+                            }
+                            
+                            Vector3 billPos = { enemy.position.x, enemy.position.y + (enemy.isBoss ? 0.3f : 0.1f), enemy.position.z };
+                            AddBillboardToRender(billPos, charSpritesheet, srcRec, size, tint, 1, camera);
                         }
-                        else if (enemy.state == STATE_ATTACK) {
-                            int attFrame = 0;
-                            if (enemy.stateTimer >= 0.25f && enemy.stateTimer < 0.4f) attFrame = 1;
-                            else if (enemy.stateTimer >= 0.4f) attFrame = 2;
-                            srcRec = (Rectangle){ (float)attFrame * 32.0f, (float)rowOffset * 32.0f, 32.0f, 32.0f };
-                        }
-                        else {
-                            srcRec = (Rectangle){ (float)enemy.animFrame * 32.0f, (float)rowOffset * 32.0f, 32.0f, 32.0f };
-                            if (enemy.state == STATE_HURT) tint = RED;
-                        }
-                        
-                        Vector3 billPos = { enemy.position.x, enemy.position.y + (enemy.isBoss ? 0.3f : 0.1f), enemy.position.z };
-                        AddBillboardToRender(billPos, charSpritesheet, srcRec, size, tint, 1, camera);
                     }
                     
                     // Gather Player (Stacked)
@@ -5034,7 +5635,7 @@ int main(void) {
                     if (useRenderTarget) EndTextureMode();
                     
                     BeginTextureMode(lightMap);
-                    ClearBackground((Color){ 10, 10, 15, 255 }); // Dark ambient base
+                    ClearBackground((Color){ 120, 125, 140, 255 }); // Dark ambient base
                     
                     BeginBlendMode(BLEND_ADDITIVE);
                     
@@ -5236,7 +5837,6 @@ int main(void) {
             if (useRenderTarget) {
                 EndTextureMode();
                 
-                BeginDrawing();
                 ClearBackground(BLACK);
                 BeginShaderMode(activeShader);
                     DrawTexturePro(targetTex.texture, 
@@ -5254,6 +5854,7 @@ int main(void) {
     UnloadModel(floorModel);
     UnloadModel(cubeModel);
     UnloadTexture(envSpritesheet);
+    UnloadTexture(spaceshipSpritesheet);
     UnloadTexture(charSpritesheet);
     UnloadTexture(monitorTexture);
     UnloadTexture(pistolTexture);
@@ -5264,6 +5865,29 @@ int main(void) {
     UnloadRenderTexture(targetTex);
     UnloadRenderTexture(lightMap);
     
+    // Unload enemy animation sets
+    for (int i = 0; i < 3; i++) {
+        if (enemyAnimSets[i].loaded) {
+            UnloadTexture(enemyAnimSets[i].idle);
+            UnloadTexture(enemyAnimSets[i].movement);
+            UnloadTexture(enemyAnimSets[i].attack);
+            UnloadTexture(enemyAnimSets[i].takeDamage);
+            UnloadTexture(enemyAnimSets[i].death);
+        }
+    }
+    
+    // Unload music streams
+    if (musicTitle.stream.buffer)    UnloadMusicStream(musicTitle);
+    if (musicGameplay.stream.buffer) UnloadMusicStream(musicGameplay);
+    if (musicBoss.stream.buffer)     UnloadMusicStream(musicBoss);
+    
+    // Unload space background textures
+    if (spaceBgTitle.id > 0) UnloadTexture(spaceBgTitle);
+    for (int i = 0; i < 4; i++) {
+        if (spaceBgPlanet[i].id > 0) UnloadTexture(spaceBgPlanet[i]);
+    }
+    
+    CloseAudioDevice();
     CloseWindow();
     return 0;
 }
